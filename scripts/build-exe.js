@@ -60,7 +60,7 @@ function listFiles(dir, base = dir) {
   await esbuild.build({...common, entryPoints: [path.join(ROOT, 'src', 'worker.js')], outfile: path.join(BUILD, 'worker.js')});
 
   step('packing the app files');
-  const assets = {'worker.js': path.join(BUILD, 'worker.js'), 'vendor/d3.min.js': path.join(ROOT, 'node_modules', 'd3', 'dist', 'd3.min.js')};
+  const assets = {'worker.js': path.join(BUILD, 'worker.js'), 'vendor/d3.min.js': path.join(ROOT, 'node_modules', 'd3', 'dist', 'd3.min.js'), 'overlay/reader.ps1': path.join(ROOT, 'src', 'overlay', 'reader.ps1')};
   for (const rel of listFiles(path.join(ROOT, 'public'))) assets[rel] = path.join(ROOT, 'public', rel);
   const seaConfig = {main: path.join(BUILD, 'server.js'), output: path.join(BUILD, 'sea-prep.blob'), disableExperimentalSEAWarning: true, useCodeCache: false, useSnapshot: false, assets};
   fs.writeFileSync(path.join(BUILD, 'sea-config.json'), JSON.stringify(seaConfig, null, 2));

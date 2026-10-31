@@ -98,7 +98,7 @@ export function fit(svg, s, maxW) {
 
 function thinLabels(svg, cats, label, step, minEvery = 1) {
   const w = d3.max(cats, (c) => measure(svg, label(c))) + 10;
-  return Math.max(minEvery, Math.ceil(w / Math.max(step, 1)));
+  return Math.max(minEvery, Math.ceil(w / Math.max(step, 0.01)));
 }
 
 // Vertical bars; several keys stack. Options:

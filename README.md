@@ -20,16 +20,38 @@ Needs Windows 10 or 11 with Microsoft Edge (installed by default). Without Edge 
 
 ## Pages
 
+- **Live**: the session you're playing, refreshed every 15 seconds: server health, server fps, players on the shard and on your game server, ping, packet loss, hitches, server restarts, the game servers on your shard with a shard health score, which server you were on where, and this session's contracts and events.
 - **Overview**: hours per month with hardware changes marked, a calendar of every day you played, when you play, which systems you load into, where you spend time.
 - **Stability**: crash or freeze rate by patch, graphics driver, renderer, GPU and CPU; crash types from the game's crash reports; how far into a session crashes happen; a list of every crash.
 - **Performance**: frame rate per month, by star system, hardware and patch; frame-time mix; memory use. From the frame-rate summary the game writes each time you leave a world.
 - **Loading & servers**: loading-screen times, server regions, relogs, disconnect reasons, server response times.
+- **Shards & servers**: every shard you've joined with time on it and crash rate, every game server you've been on with its fps and health, server fps by time of day and health by region.
 - **Combat**: ship combat vs on foot against NPCs vs players, PvP kills and deaths per month, top weapons for each, who you fight, where, how you died, ships you destroyed, anonymous rivals, your biggest combat sessions.
 - **Ships**: flights per ship and manufacturer, timed hours, quantum jumps, ships lost, a ship log.
 - **Missions & money**: contracts over time and by name, shop spending by month and category, biggest purchases and whether the shop confirmed them.
 - **Sessions**: every session, searchable; click one for its timeline and frame-rate summaries.
 
 The **LIVE / PTU / All builds** switch and the period picker filter every page.
+
+## Live server status
+
+Server fps, player counts, ping, packet loss and which game server you're on aren't in any log file; the game only shows them on its info overlay. To get them:
+
+1. In the game console (`~`), type `r_displayinfo 3`. If your `USER.cfg` contains `r_displayinfo = 0`, the overlay starts hidden every time; change it to `3` or type the command each session. The Live tab tells you when this is the case.
+2. Play in borderless or windowed mode.
+
+While Star Citizen runs and is the window in front, the app copies the overlay's corner of the screen (about 720 × 320 pixels) and reads its text with Windows' built-in text recognition. It never reads the game's memory or files other than its logs; it reads screen pixels, like streaming software does. The images aren't kept, only the numbers.
+
+- Every 15 seconds by default; you can pick 10, 15, 30 or 60 seconds, or switch it off, on the Live tab.
+- Each read takes about 100–250 ms of CPU on one core while the game runs. The reader uses about 150 MB of memory, and only while the game runs. In testing, the game's own frame-time statistics showed no added stutter.
+- In a ship, its name banner covers part of the overlay. When a read misses something, the app looks at the same capture once or twice more: once keeping only the colored text (the server fps line turns yellow or orange when the server struggles), then with everything behind the overlay's text painted out (the overlay's text has a black shadow, the banner doesn't). Such a read costs about 350–500 ms of CPU, so at the 10-second setting reading uses up to about 5% of one core while you sit in a ship.
+- Numbers that don't add up are dropped rather than shown: a server fps whose frame times disagree with it, a player count that jumps several-fold within minutes. A player count the app couldn't read is taken from the last reading that had it: within 2 minutes for your game server, 5 for the shard.
+- Where you were comes from the overlay's location line (a station, or open space near a Lagrange point) when it's readable, otherwise from the last place the game logged you opening an inventory, as long as you haven't changed game server since.
+- Reading pauses while the game is minimized or behind another window.
+- The app keeps running in the background while the game is open, so a session is recorded even if you close the app window.
+- Readings are stored in `%LOCALAPPDATA%\StarCitizenInsights\overlay\` (one file per month).
+
+**Health** of a reading is 60% the server's fps and 40% the lowest fps in the overlay's measuring window, both out of 30 (what game servers run at), minus 2 points per hitch. 80+ is healthy, 60+ OK, 40+ struggling, lower is bad. A **game server's** health is the median of its readings; the **shard's** health is the health of the game servers you've been on in the last two hours, weighted by how many players each one has. Servers you haven't visited can't be seen from your PC.
 
 ## What the logs can and can't tell
 
@@ -68,5 +90,8 @@ On your own PC you can also start from source with `Star Citizen Insights.vbs` (
 - `src/locate.js`: finds the install folder (launcher log, common folders on every drive).
 - `src/server.js`: local web server, folder picker and the app window launcher.
 - `public/`: the app UI (vanilla JS modules plus d3).
+- `src/live.js`: follows the Game.log of the session being played.
+- `src/overlay/`: `reader.ps1` captures the overlay corner and runs Windows OCR, `parse.js` turns its text into numbers, `monitor.js` reads on a schedule and stores readings.
 - `scripts/build-exe.js`: builds the .exe. `scripts/make-icon.js` regenerates `public/app.ico`.
+- `scripts/ocr-file.js`: runs the overlay reader and parser on screenshots (`node scripts/ocr-file.js 720 320 3 0 shot.jpg`). `scripts/bench-overlay.js` times the reader.
 - `prototype/` (local only, not published): the first Python analysis scripts and an earlier one-page dashboard.

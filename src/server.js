@@ -13,6 +13,8 @@ const {Worker} = require('worker_threads');
 const sea = require('node:sea');
 const {scan} = require('./scan');
 const {findInstallRoot, normalizeRoot} = require('./locate');
+const {LiveSession, displayInfoSetting} = require('./live');
+const {OverlayMonitor, REGION} = require('./overlay/monitor');
 
 const {version: VERSION} = require('../package.json');
 const IS_EXE = sea.isSea();
@@ -63,6 +65,51 @@ const openOnStart = IS_EXE ? !flag('--no-open') : flag('--open');
 const exitWhenIdle = IS_EXE || flag('--exit-when-idle');
 // SCI_NO_DETECT=1 skips auto-detection, to try the first-run folder picker.
 let root = normalizeRoot(opt('--root', '')) || (process.env.SCI_NO_DETECT ? null : findInstallRoot(config.installRoot));
+
+// ---------- live session and overlay reading
+const OVERLAY_DEFAULTS = {enabled: true, intervalSec: 15, debug: false};
+const overlaySettings = () => ({...OVERLAY_DEFAULTS, ...(loadConfig().overlay || {})});
+
+// PowerShell needs the reader as a file; inside the .exe it is unpacked next to the data.
+function readerScriptPath() {
+  if (!IS_EXE) return path.join(__dirname, 'overlay', 'reader.ps1');
+  const target = path.join(DATA_DIR, 'reader.ps1');
+  const body = Buffer.from(sea.getAsset('overlay/reader.ps1'));
+  let current = null;
+  try {
+    current = fs.readFileSync(target);
+  } catch (e) {
+    // first run
+  }
+  if (!current || !current.equals(body)) fs.writeFileSync(target, body);
+  return target;
+}
+
+const live = new LiveSession(() => root);
+const monitor = new OverlayMonitor({
+  dataDir: DATA_DIR,
+  readerScript: readerScriptPath(),
+  getContext: () => live.context(),
+  getSettings: overlaySettings,
+});
+
+function livePayload() {
+  const session = live.summary();
+  const ctx = live.context();
+  const sinceSession = session ? session.start : null;
+  const threeHours = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 19);
+  const key = session ? session.id || session.start : null;
+  return {
+    now: new Date().toISOString().slice(0, 19),
+    overlay: {...monitor.status, settings: overlaySettings(), region: REGION},
+    session,
+    context: ctx,
+    displayInfo: displayInfoSetting(root, session && session.channel),
+    // This session's readings, plus anything from the same shard in the last 3 hours (a relog lands there again).
+    readings: monitor.readings.filter((r) => (key && r.session === key) || (r.t >= threeHours && (!ctx || !ctx.shard || r.shard === ctx.shard))),
+    sinceSession,
+  };
+}
 
 // ---------- files the page needs, from disk or from inside the .exe
 function readAsset(rel) {
@@ -217,6 +264,16 @@ const server = http.createServer(async (req, res) => {
     const {file, ...rest} = s;
     return sendJson(res, req, {...rest, fileName: path.basename(file)});
   }
+  if (p === '/api/live') return sendJson(res, req, livePayload());
+  if (p === '/api/readings') return sendJson(res, req, {readings: monitor.readings});
+  if (p === '/api/overlay' && req.method === 'POST') {
+    const body = await readBody(req);
+    const next = {...overlaySettings()};
+    if (typeof body.enabled === 'boolean') next.enabled = body.enabled;
+    if (Number.isFinite(body.intervalSec)) next.intervalSec = Math.min(120, Math.max(10, Math.round(body.intervalSec)));
+    saveConfig({overlay: next});
+    return sendJson(res, req, {settings: next});
+  }
   if (p === '/api/rescan' && req.method === 'POST') {
     runScan();
     return sendJson(res, req, {...state, scanning: true});
@@ -274,11 +331,14 @@ server.listen(port, '127.0.0.1', () => {
   console.log(root ? `Reading logs from ${root}` : 'Star Citizen folder not found yet; the app will ask for it.');
   console.log(`Data folder: ${DATA_DIR}`);
   runScan();
+  live.start();
+  monitor.start();
   if (openOnStart) openWindow();
   if (exitWhenIdle) {
-    // The page pings every 20 s; quit a while after the last window closes.
+    // The page pings every 20 s; quit a while after the last window closes, but keep reading while the game runs.
     setInterval(() => {
-      if (!state.scanning && Date.now() - lastPing > 120000) process.exit(0);
+      const playing = !['no-game', 'off', 'starting'].includes(monitor.status.state);
+      if (!state.scanning && !playing && Date.now() - lastPing > 120000) process.exit(0);
     }, 15000);
   }
 });

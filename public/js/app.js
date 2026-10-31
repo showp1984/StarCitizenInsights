@@ -8,8 +8,11 @@ import * as combat from './pages/combat.js';
 import * as ships from './pages/ships.js';
 import * as missions from './pages/missions.js';
 import * as sessionsPage from './pages/sessions.js';
+import * as live from './pages/live.js';
+import * as servers from './pages/servers.js';
 
-const PAGES = {overview, stability, performance, loading, combat, ships, missions, sessions: sessionsPage};
+const PAGES = {live, overview, stability, performance, loading, servers, combat, ships, missions, sessions: sessionsPage};
+const LIVE_REFRESH_MS = 15000;
 const $ = (s) => document.querySelector(s);
 
 const saved = (() => {
@@ -47,12 +50,23 @@ function render() {
   $('#period-filter').value = state.period;
   const page = $('#page');
   const scroll = window.scrollY;
-  const sessions = filterSessions(state.data.sessions, state);
-  page.replaceChildren();
-  PAGES[state.page].render(page, {sessions, all: state.data.sessions, nick: state.data.nick, state, open});
-  if (render.keepScroll) window.scrollTo(0, scroll);
+  const keep = render.keepScroll;
   render.keepScroll = false;
+  const sessions = filterSessions(state.data.sessions, state);
+  // Pages replace their own content; the live pages fetch first, so a refresh doesn't blank the screen.
+  const done = PAGES[state.page].render(page, {sessions, all: state.data.sessions, nick: state.data.nick, state, open});
+  Promise.resolve(done).then(() => {
+    if (keep) window.scrollTo(0, scroll);
+  });
 }
+
+// The Live tab follows the running session.
+setInterval(() => {
+  if (state.data && state.page === 'live' && !document.hidden) {
+    render.keepScroll = true;
+    render();
+  }
+}, LIVE_REFRESH_MS);
 
 function setSub(text) {
   $('#brand-sub').textContent = text;

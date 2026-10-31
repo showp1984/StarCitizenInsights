@@ -6,7 +6,7 @@ const fs = require('fs');
 const readline = require('readline');
 const crypto = require('crypto');
 
-const PARSER_VERSION = 15;
+const PARSER_VERSION = 16;
 
 const TS = /^<(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?Z>/;
 const ID_SUFFIX = /_\d{9,}$/;
@@ -29,7 +29,7 @@ const RX = {
   driver: /VulkanMetric -\s+Driver (\S+)/,
   nick: /nickname="([^"]+)"/,
   load: /Loading screen for (\w+) : \w+ closed after ([\d.]+) seconds/,
-  join: /<Join PU>.*shard\[([^\]]+)\]/,
+  join: /<Join PU> address\[([^\]]*)\] port\[(\d*)\] shard\[([^\]]+)\]/,
   kill: /CActor::Kill: '([^']+)' \[\d+\] in zone '([^']*)' killed by '([^']+)' \[\d+\] using '([^']*)' \[Class ([^\]]*)\] with damage type '([^']+)'/,
   vdest: /Vehicle '([^']+)' \[\d+\] in zone '([^']*)'.*?driven by '([^']+)' \[\d+\] advanced from destroy level (\d) to (\d) caused by '([^']+)' \[\d+\] with '([^']+)'/,
   control: /<Vehicle Control Flow>.*?(granted|releasing) control token for '([^']+)'/,
@@ -290,8 +290,8 @@ async function parseLogFile(file) {
     }
     if (line.includes('<Join PU>')) {
       if ((m = RX.join.exec(line))) {
-        rec.joins.push({t: lastTs, region: regionOf(m[1])});
-        tl(lastTs, 'server', `Joined a ${regionOf(m[1])} server`);
+        rec.joins.push({t: lastTs, region: regionOf(m[3]), shard: m[3], address: m[1], port: Number(m[2])});
+        tl(lastTs, 'server', `Joined shard ${m[3]} (${regionOf(m[3])})`);
       }
       continue;
     }
@@ -458,7 +458,10 @@ async function parseLogFile(file) {
       continue;
     }
     if (line.includes('RequestLocationInventory')) {
-      if ((m = RX.location.exec(line))) rec.locations[m[1]] = (rec.locations[m[1]] || 0) + 1;
+      if ((m = RX.location.exec(line))) {
+        rec.locations[m[1]] = (rec.locations[m[1]] || 0) + 1;
+        rec.lastLocation = {t: lastTs, name: m[1]};
+      }
       continue;
     }
     if (line.includes('<Inventory Request Completed>')) {

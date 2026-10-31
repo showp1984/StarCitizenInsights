@@ -5,12 +5,37 @@ import {tile, card, head, draw, b} from './common.js';
 const PLACES = {
   GrimHEX: 'GrimHEX', Stanton1_Lorville: 'Lorville (Hurston)', Stanton3_Area18: 'Area18 (ArcCorp)', Stanton4_NewBabbage: 'New Babbage (microTech)',
   Stanton2_Orison: 'Orison (Crusader)', Nyx_Levski: 'Levski (Nyx)', AsteroidClusterBase_Nyx_Social_Keeger_001: 'Keeger social hub (Nyx)',
-  RR_P2_L4: 'Station at Pyro II L4', RR_P3_LEO: 'Station in Pyro III orbit', RR_P6_LEO: 'Station in Pyro VI orbit', RR_HUR_LEO: 'Station in Hurston orbit',
+  RR_P2_L4: 'Checkmate (Pyro II L4)', RR_P3_L1: 'Starlight Service Station (Pyro III L1)',
+  RR_P3_LEO: 'Station in Pyro III orbit', RR_P6_LEO: 'Station in Pyro VI orbit', RR_HUR_LEO: 'Station in Hurston orbit',
   RR_CRU_LEO: 'Station in Crusader orbit', RR_ARC_LEO: 'Station in ArcCorp orbit', RR_MIC_LEO: 'Station in microTech orbit',
   RR_JP_StantonPyro: 'Stanton–Pyro jump point station', RR_JP_PyroStanton: 'Pyro–Stanton jump point station',
   RR_JP_StantonMagnus: 'Stanton–Magnus jump point station', RR_JP_NyxCastra: 'Nyx–Castra jump point station',
 };
-export const placeName = (k) => PLACES[k] || k.replace(/_/g, ' ');
+const ROMAN = ['', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX'];
+const STANTON = {
+  1: 'Hurston', '1a': 'Arial', '1b': 'Aberdeen', '1c': 'Magda', '1d': 'Ita', 2: 'Crusader', '2a': 'Cellin', '2b': 'Daymar', '2c': 'Yela',
+  3: 'ArcCorp', '3a': 'Lyria', '3b': 'Wala', 4: 'microTech', '4a': 'Calliope', '4b': 'Clio', '4c': 'Euterpe',
+};
+const body = (system, n, moon) => {
+  const sys = system[0].toUpperCase() + system.slice(1).toLowerCase();
+  return sys === 'Stanton' ? STANTON[n + moon] || STANTON[n] : `${sys} ${ROMAN[n]}${moon ? ` (moon ${moon})` : ''}`;
+};
+// Besides Game.log's names (some, like Stanton2b_ArcCorpMining_Area141, start with the planet or moon), the
+// overlay reports Pyro3_L1 (in space near a Lagrange point), PyroSolarSystem, and the nearest body as Pyro5 or
+// Stanton2c.
+export const placeName = (k) => {
+  let m;
+  if (PLACES[k]) return PLACES[k];
+  if ((m = /^(Stanton|Pyro|Nyx|Castra)(\d)([a-z]?)$/i.exec(k))) return `Near ${body(m[1], m[2], m[3])}`;
+  if ((m = /^RR_P(\d)_L(\d)$/.exec(k))) return `Station at Pyro ${ROMAN[m[1]]} L${m[2]}`;
+  if ((m = /^([A-Za-z]+)(\d)_L(\d)$/.exec(k))) return `Space near ${m[1]} ${ROMAN[m[2]]} L${m[3]}`;
+  if ((m = /^(Stanton|Pyro|Nyx|Castra)(\d)([a-z]?)_(.+)$/.exec(k))) {
+    const name = m[4].replace(/_/g, ' ').replace(/([a-z])(\d)/g, '$1 $2').replace(/([a-z])([A-Z])/g, '$1 $2').replace('Arc Corp', 'ArcCorp');
+    return `${name} (${body(m[1], m[2], m[3])})`;
+  }
+  if ((m = /^([A-Za-z]+)SolarSystem$/.exec(k))) return `In space (${m[1]})`;
+  return k.replace(/_/g, ' ');
+};
 
 export function render(root, {sessions, all, state}) {
   const hours = sum(sessions, (s) => s.hours);
