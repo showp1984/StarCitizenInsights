@@ -1,0 +1,28 @@
+{
+  "name": "star-citizen-insights",
+  "version": "0.1.0",
+  "description": "Local app that turns your Star Citizen Game.log files into stability, performance, combat and ship insights.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/showp1984/StarCitizenInsights.git"
+  },
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js --open",
+    "serve": "node src/server.js",
+    "scan": "node scripts/scan-cli.js",
+    "build": "node scripts/build-exe.js",
+    "icon": "node scripts/make-icon.js"
+  },
+  "type": "commonjs",
+  "dependencies": {
+    "d3": "^7.9.0"
+  },
+  "private": true,
+  "devDependencies": {
+    "esbuild": "^0.25.5",
+    "postject": "^1.0.0-alpha.6",
+    "rcedit": "^4.0.1"
+  }
+}
