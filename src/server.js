@@ -93,6 +93,41 @@ const monitor = new OverlayMonitor({
   getSettings: overlaySettings,
 });
 
+// Sessions with overlay positions, newest first, for the Journey tab's picker.
+function journeyList() {
+  const by = new Map();
+  for (const r of monitor.readings) {
+    if (!r.session || !r.pos) continue;
+    const j = by.get(r.session) || {session: r.session, env: r.env, start: r.t, end: r.t, positions: 0, systems: []};
+    j.end = r.t;
+    j.positions += 1;
+    if (r.system && !j.systems.includes(r.system)) j.systems.push(r.system);
+    by.set(r.session, j);
+  }
+  const ctx = live.context();
+  return [...by.values()].filter((j) => j.positions >= 2).map((j) => ({...j, live: !!ctx && ctx.session === j.session})).sort((a, b) => (a.start < b.start ? 1 : -1));
+}
+
+// Where the overlay's location line named a place, relative to the planet, moon or Lagrange point it belongs to:
+// the median of every reading there, from all sessions in memory.
+function knownPlaces() {
+  const by = new Map();
+  for (const r of monitor.readings) {
+    if (!r.place || !r.body || !r.local || /SolarSystem$|^[A-Z][a-z]+\d[a-z]?$|_L\d$/.test(r.place)) continue;
+    const k = `${r.place}|${r.body}`;
+    if (!by.has(k)) by.set(k, []);
+    by.get(k).push(r.local);
+  }
+  const mid = (vs) => {
+    const s = [...vs].sort((a, b) => a - b);
+    return s[s.length >> 1];
+  };
+  return [...by].filter(([, list]) => list.length >= 2).map(([k, list]) => {
+    const [place, body] = k.split('|');
+    return {place, body, local: [0, 1, 2].map((i) => mid(list.map((l) => l[i] ?? 0))), readings: list.length};
+  });
+}
+
 function livePayload() {
   const session = live.summary();
   const ctx = live.context();
@@ -201,14 +236,14 @@ function payload() {
     generatedAt: state.finishedAt,
     root,
     nick: Object.entries(nicks).sort((a, b) => b[1] - a[1]).map(([n]) => n)[0] || null,
-    sessions: sessions.map(({timeline, file, ...rest}) => ({...rest, fileName: path.basename(file), timelineLength: timeline.length})),
+    sessions: sessions.map(({timeline, placesAt, file, ...rest}) => ({...rest, fileName: path.basename(file), timelineLength: timeline.length})),
   });
   payloadCache = {json: body, gz: zlib.gzipSync(body)};
   return payloadCache;
 }
 
 // ---------- http
-const TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.png': 'image/png'};
+const TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.png': 'image/png'};
 
 function send(res, status, body, type) {
   res.writeHead(status, {'Content-Type': type, 'Cache-Control': 'no-store'});
@@ -265,7 +300,14 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, req, {...rest, fileName: path.basename(file)});
   }
   if (p === '/api/live') return sendJson(res, req, livePayload());
-  if (p === '/api/readings') return sendJson(res, req, {readings: monitor.readings});
+  if (p === '/api/readings') return sendJson(res, req, {readings: monitor.readings.map(({pos, pos2, posCheck, local, ship, ...r}) => r)});
+  if (p === '/api/journeys') return sendJson(res, req, {journeys: journeyList()});
+  if (p === '/api/journey') {
+    const key = u.searchParams.get('session');
+    const s = sessions.find((x) => (x.id || x.start) === key) || (live.session && (live.session.id || live.session.start) === key ? live.session : null);
+    const events = s ? s.timeline.filter((e) => ['mission', 'death', 'shop', 'ship', 'load', 'quit', 'crash', 'med'].includes(e.kind)) : [];
+    return sendJson(res, req, {readings: monitor.readings.filter((r) => r.session === key), events, logPlaces: s ? s.placesAt || [] : [], places: knownPlaces()});
+  }
   if (p === '/api/overlay' && req.method === 'POST') {
     const body = await readBody(req);
     const next = {...overlaySettings()};

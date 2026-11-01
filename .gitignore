@@ -1,6 +1,6 @@
 node_modules/
 # Your parsed logs, settings and the app window's browser profile
-data/
+/data/
 build/
 dist/
 # Early analysis scripts and a dashboard that carries your in-game handle; kept local

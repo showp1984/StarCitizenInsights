@@ -51,6 +51,8 @@ function fixWithPrevious(r, readings) {
   const jumped = (v, p, slack) => v != null && p != null && Math.abs(v - p) > slack && (v > p * 3 || p > v * 3);
   if (jumped(r.playersServer, recent('playersServer', (x) => x.server === r.server, 120000), 10)) delete r.playersServer;
   if (jumped(r.playersShard, recent('playersShard', (x) => x.shard === r.shard, 600000), 50)) delete r.playersShard;
+  // Memory doesn't grow or shrink several-fold within 2 minutes either; a dropped digit does.
+  for (const k of ['vramMB', 'wsMB', 'commitMB']) if (jumped(r[k], recent(k, (x) => x.session === r.session, 120000), 500)) delete r[k];
   const pings = readings.filter((x) => x.pingMs != null && x.shard === r.shard && toMs(r.t) - toMs(x.t) <= 120000).map((x) => x.pingMs).sort((a, b) => a - b);
   if (r.pingMs != null && pings.length >= 3 && r.pingMs < pings[pings.length >> 1] / 3) delete r.pingMs;
 }
@@ -108,6 +110,18 @@ class OverlayMonitor {
       }
     }
     return out;
+  }
+
+  // The overlay names the star system only near a planet, moon, Lagrange or jump point. In between it's the one
+  // you were last seen in this session (after a jump tunnel, the one it leads to), else the one Game.log loaded.
+  systemOf(r, ctx) {
+    if (r.system) return r.system;
+    for (let i = this.readings.length - 1; i >= 0; i -= 1) {
+      const x = this.readings[i];
+      if (x.session !== r.session) break;
+      if (x.system) return x.jumpTo || x.system;
+    }
+    return ctx.system || null;
   }
 
   save(r) {
@@ -245,8 +259,11 @@ class OverlayMonitor {
         if (before && before.server !== reading.server && toMs(t) - toMs(before.t) <= 5 * 60000) this.movedAt = t;
         this.lastServer = {t, server: reading.server};
       }
+      // `place` is what the location line said this time; `location` may come from earlier or from Game.log.
+      if (parsed.location) reading.place = parsed.location;
       reading.location = bestLocation(t, parsed, this.lastOverlayLocation, ctx, this.movedAt);
       if (parsed.location) this.lastOverlayLocation = {t, name: parsed.location};
+      reading.system = this.systemOf(reading, ctx);
       this.save(reading);
       const missing = KEY_FIELDS.filter((k) => reading[k] == null);
       if (missing.length && this.getSettings().debug) await this.keepForDiagnosis(reading, res.lines, missing);

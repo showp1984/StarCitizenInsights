@@ -65,6 +65,18 @@ export function fillGaps(readings) {
   return out;
 }
 
+// The highest value of `key` in a session's readings that another reading within 2 minutes backs up (within 10%),
+// so one misread digit can't become the peak.
+export function steadyPeak(list, key) {
+  const pts = list.filter((r) => r[key] != null).sort((a, b) => (a.t < b.t ? -1 : 1));
+  let best = null;
+  pts.forEach((r, i) => {
+    const backed = [pts[i - 1], pts[i + 1]].some((o) => o && Math.abs(ms(o.t) - ms(r.t)) <= 120000 && Math.abs(o[key] - r[key]) <= 0.1 * r[key]);
+    if (backed && (best == null || r[key] > best)) best = r[key];
+  });
+  return best;
+}
+
 // Places in the order you were there; the overlay's planet line only when no location was known at all.
 function placesOf(list) {
   const locations = [...new Set(list.map((r) => r.location).filter(Boolean))];

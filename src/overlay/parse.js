@@ -112,11 +112,13 @@ function clientFps(text) {
   return m ? perSecond(dec(m[1])) : null;
 }
 
-// "RR P2 L4 (LZ : RR P2 L4)" at a station, "Pyro3 L1" or "PyroSolarSystem" in space.
+// "RR P2 L4 (LZ : RR P2 L4)" at a station, "GrimHEX (LZ : GrimHEX)", "Pyro3 L1" or "PyroSolarSystem" in space.
 function playerLocation(text) {
   const v = text.replace(/^.*?locat\S*\s*[:.]?\s*/i, '');
   let m;
   if ((m = /RR\W*P\W*(\d)\W*[L1I|]\W*(\d)/i.exec(v))) return `RR_P${m[1]}_L${m[2]}`;
+  if (/Gr[il1|]?[mn]\s*HEX/i.test(v)) return 'GrimHEX';
+  if ((m = /(Stanton|Pyro|Nyx)\s*(\d[a-z]?)\s*_?\s*(Lorville|Area\s*18|New\s*Babbage|Orison|Levski)/i.exec(v))) return `${m[1]}${m[2]}_${m[3].replace(/\s/g, '')}`;
   if ((m = /(Pyr[o0]|Stanton|Nyx|Castra)\s*([0-9])\s*L\s*([0-9lI|])/i.exec(v))) return `${m[1].replace(/0$/, 'o')}${m[2]}_L${num(m[3])}`;
   if ((m = /(Pyr[o0]|Stanton|Nyx|Castra)\s*Solar/i.exec(v))) return `${m[1].replace(/0$/, 'o')}SolarSystem`;
   return null;
@@ -129,6 +131,136 @@ function planetCode(text) {
   const m = /([Ss]t?anton|[Pp]yr[o0d]|[Nn]yx|[Cc]astra)[\s_]*(\d)(?:([a-z])(?![a-z]))?/.exec(v);
   if (!m) return null;
   return `${{s: 'Stanton', p: 'Pyro', n: 'Nyx', c: 'Castra'}[m[1][0].toLowerCase()]}${m[2]}${m[3] || ''}`;
+}
+
+// ---------- where you are
+// The overlay's top rows are a stack of zones, innermost first, each with your position in it:
+//   Zone: RSI_Constellation_Mk5_Centaurus_911428487496 Pos: -1.30m 41.74m -0.01m     inside your ship
+//   Zone: OOC_Stanton_2c_Yela Pos: -568.7154km 383.5623km -2033.96m                    from Yela's centre, turning with it
+//   Zone: SolarSystem_863673139739 Pos: -19023288.3077km -2614573.4443km -2293.63m     in the star system
+//   Zone: Root Pos: -19023288.3077km -2614573.4443km -2293.63m                         the same numbers again
+// Distances print in km with four decimals, or in m with two under 10 km. OCR turns minus signs into dashes, "=",
+// "<" or a bullet and garbles a digit now and then, so a number only counts with the right decimals and with
+// nothing unreadable between it and the one before; the system position is checked against its second copy.
+const ZONE_ROW = /Zone\s*[:;]|P[o0]s\s*[:.;,i"„]|\d[.,]\d{4}\s?km/i;
+const SYSTEMS = {s: 'Stanton', p: 'Pyro', n: 'Nyx', c: 'Castra'};
+const BODIES = {
+  hurston: 'Stanton1', arial: 'Stanton1a', aberdeen: 'Stanton1b', magda: 'Stanton1c', ita: 'Stanton1d',
+  crusader: 'Stanton2', cellin: 'Stanton2a', daymar: 'Stanton2b', yela: 'Stanton2c',
+  arccorp: 'Stanton3', lyria: 'Stanton3a', wala: 'Stanton3b', microtech: 'Stanton4', calliope: 'Stanton4a', clio: 'Stanton4b', euterpe: 'Stanton4c',
+  monox: 'Pyro2', bloom: 'Pyro3', terminus: 'Pyro6', ignis: 'Pyro5a', vatra: 'Pyro5b', adir: 'Pyro5c', fairo: 'Pyro5d', fuego: 'Pyro5e', vuur: 'Pyro5f',
+  delamar: 'Nyx1',
+};
+const MAKERS = /^\W*(RSI|AEGS|ANVL|ARGO|BANU|CNOU|CRUS|DRAK|ESPR|GAMA|GRIN|KRIG|MISC|MRAI|ORIG|TMBL|VNCL|XIAN|XNAA|Aegis|Anvil|Origin|Drake|Mirai)\b/i;
+const SYS_ZONE = /System|stem_|Root|^\W*oot\b/i;
+// ("oot" is Root with its R lost, but "oot Stanton 2c Yela" is OOC_Stanton_2c_Yela.)
+const isSystemZone = (name) => SYS_ZONE.test(name) && !bodyOf(name) && !lagrangeOf(name);
+
+// Up to three distances in km from the text after a zone's name; null where one couldn't be read.
+function distances(text) {
+  const s = text.replace(/[–—=~<]/g, '-').replace(/[•·]/g, ' ').replace(/(?<=\d)[lI|](?=\d)/g, '1').replace(/(?<=\d)[Oo](?=\d)/g, '0');
+  const re = /(-?)\s*(\d+)[.,](\d+)\s?(km|m)(?![a-z])/gi;
+  const out = [null, null, null];
+  let end = -1;
+  let m;
+  for (let i = 0; i < 3 && (m = re.exec(s)); i += 1) {
+    const before = s.slice(end < 0 ? 0 : end, m.index);
+    // Between two numbers there's only space; before the first, the label's punctuation, not part of a number
+    // we couldn't read ("Post -26j3662.5260km" is -2613662.5260 with the 1 misread).
+    if (end >= 0 ? /[^\s-]/.test(before) : /[\dÀ-ɏ]|[A-Za-z]-?$/.test(before)) break;
+    const km = m[4].toLowerCase() === 'km';
+    if (m[3].length === (km ? 4 : 2)) out[i] = Number(`${m[1]}${m[2]}.${m[3]}`) / (km ? 1 : 1000);
+    end = m.index + m[0].length;
+  }
+  return out;
+}
+
+function bodyOf(name) {
+  const word = (name.toLowerCase().match(/[a-z]+/g) || []).find((w) => BODIES[w]);
+  if (word) return BODIES[word];
+  // (A digit followed by more digits is an id, as in "Hangar_LargeTop_RestStop_Pyro 862143775348".)
+  const m = /(St\w{2,4}on|Pyr[o0d]|Nyx|Castra)[\s_¯-]*(\d)(?!\d)(?:[\s_¯-]*([a-f])(?![a-z]))?/i.exec(name);
+  return m ? `${SYSTEMS[m[1][0].toLowerCase()]}${m[2]}${(m[3] || '').toLowerCase()}` : null;
+}
+
+// Pyro's Lagrange zones read "P2 L4"; Stanton's "HUR-L1" or "Stanton1_L1".
+function lagrangeOf(name) {
+  const n = (c) => ({I: '1', l: '1', '|': '1', A: '4'}[c] || c);
+  let m;
+  if ((m = /\bP\s*([1-6])[\s_-]*L\s*([1-5IlA|])\b/.exec(name))) return `Pyro${m[1]}_L${n(m[2])}`;
+  if ((m = /\b(HUR|CRU|ARC|MIC)[\s_-]*L\s*([1-5Il|])\b/i.exec(name))) return `Stanton${{HUR: 1, CRU: 2, ARC: 3, MIC: 4}[m[1].toUpperCase()]}_L${n(m[2])}`;
+  if ((m = /Stanton\s*([1-4])[\s_-]*L\s*([1-5Il|])\b/i.exec(name))) return `Stanton${m[1]}_L${n(m[2])}`;
+  return null;
+}
+
+// "jumppoint_pyro_stanton" in Pyro, "OOC_JumpPoint_stanton_pyro" on the Stanton side: here first, then there.
+function jumpOf(name) {
+  const sys = (w) => (/^\w?tanton$/i.test(w) ? 'Stanton' : /^p\w?ro$/i.test(w) ? 'Pyro' : /^nyx$/i.test(w) ? 'Nyx' : /^castra$/i.test(w) ? 'Castra' : null);
+  const m = /jump\s*poi\w*?[^a-z]*(p\w?ro|\w?tanton|nyx|castra)[^a-z]*(p\w?ro|\w?tanton|nyx|castra)/i.exec(name);
+  return m && sys(m[1]) && sys(m[2]) ? {from: sys(m[1]), to: sys(m[2])} : null;
+}
+
+const close = (a, b) => a != null && b != null && Math.abs(a - b) < 0.0005;
+
+function whereabouts(list) {
+  const stack = [];
+  for (const r of list) {
+    if (!ZONE_ROW.test(r.text)) {
+      if (stack.length) break;
+      continue;
+    }
+    const label = /Zone\s*[:;]?\s*/i.exec(r.text);
+    const rest = label ? r.text.slice(label.index + label[0].length) : r.text;
+    const cut = rest.search(/P[o0]s\s*\S?|-?\s*\d+[.,]\d+\s?k?m/i);
+    stack.push({name: (cut < 0 ? rest : rest.slice(0, cut)).trim(), d: distances(cut < 0 ? '' : rest.slice(cut).replace(/^P[o0]s/i, ''))});
+  }
+  if (!stack.length) return {};
+  const out = {};
+  const copies = stack.filter((z) => isSystemZone(z.name) && z.d[0] != null && z.d[1] != null).map((z) => z.d);
+  const agree = copies.find((c, i) => copies.some((o, j) => j !== i && close(c[0], o[0]) && close(c[1], o[1])));
+  if (agree) {
+    out.pos = [agree[0], agree[1], copies.map((c) => c[2]).find((z, i) => z != null && copies.some((o, j) => j !== i && close(z, o[2]))) ?? agree[2]];
+    out.posCheck = 2;
+  } else if (copies.length) {
+    out.pos = copies[0];
+    out.posCheck = copies.length === 1 ? 1 : 0;
+    if (copies.length > 1) out.pos2 = copies[1];
+  }
+  // The zone just inside the star system says where you are: a planet or moon, a Lagrange point, a jump point.
+  for (const z of stack.filter((x) => !isSystemZone(x.name))) {
+    const body = bodyOf(z.name) || lagrangeOf(z.name);
+    const jump = !body && jumpOf(z.name);
+    if (/Jump\s*Tunn/i.test(z.name)) out.tunnel = true;
+    if (jump) {
+      out.body = `JP_${jump.from}_${jump.to}`;
+      out.system = jump.from;
+      if (out.tunnel) out.jumpTo = jump.to;
+    }
+    if (body) {
+      out.body = body;
+      out.system = /^[A-Z][a-z]+/.exec(body)[0];
+    }
+    if ((body || jump) && z.d[0] != null && z.d[1] != null) out.local = z.d;
+    else if (body || jump) delete out.local;
+  }
+  // Planets, moons and Lagrange points sit at height 0, so your height above the system plane is the same in both
+  // frames: when the copies disagree on it, the one matching the body's frame is right.
+  if (out.pos && out.local && out.local[2] != null && !close(out.pos[2], out.local[2])) {
+    const z = copies.map((c) => c[2]).find((v) => close(v, out.local[2]));
+    if (z != null) out.pos[2] = z;
+  }
+  // The main menu has a star system of its own, with you at its centre.
+  if (out.pos && Math.hypot(out.pos[0], out.pos[1]) < 100) {
+    for (const k of ['pos', 'pos2', 'posCheck']) delete out[k];
+  }
+  const inner = stack[0].name;
+  if (MAKERS.test(inner) && !bodyOf(inner)) {
+    const ship = inner.replace(/[_¯]/g, ' ').replace(/\s*\d{6,}\S*.*$/, '').replace(/\s+/g, ' ').trim();
+    if (/^[A-Za-z]{3,5} [A-Za-z0-9 -]{3,40}$/.test(ship)) out.ship = ship;
+  }
+  const round = (v) => (v == null ? null : Math.round(v * 10000) / 10000);
+  for (const k of ['pos', 'pos2', 'local']) if (out[k]) out[k] = out[k].map(round);
+  return out;
 }
 
 // `colored`: the OCR lines of the colored-text pass, when the monitor asked for one.
@@ -194,6 +326,30 @@ function parseOverlay(lines, colored) {
     if ((m = /Bw\s*[O0]ut\s*[:;]?\s*(\d+[.,]\d+)/i.exec(s))) out.bwOutKbps = Math.round(Number(m[1].replace(',', '.')));
   }
 
+  // "VRAM(MB): 12071 / 31419": video memory in use and on the card. Game.log has no figure for this.
+  const vram = find(/VRAM\s*\(?\s*MB/i);
+  if (vram) {
+    const m = /MB\s*\)?\s*[:;]?\s*(\d{3,6})\s*[/|]\s*(\d{4,6})/i.exec(digits(vram));
+    if (m && Number(m[1]) <= Number(m[2])) {
+      out.vramMB = Number(m[1]);
+      out.vramTotalMB = Number(m[2]);
+    }
+  }
+  // "Working Set (OS): 27.06 GiB Committed (OS): 42.57 GiB": the game's memory actually in RAM, and reserved.
+  const mem = find(/Working\s*Set|Committed\s*\(/i);
+  if (mem) {
+    const s = digits(mem);
+    const gib = (re) => {
+      const m = re.exec(s);
+      return m ? Math.round(Number(m[1].replace(',', '.')) * 1024) : null;
+    };
+    // (GiB sometimes comes back as "%iB".)
+    const ws = gib(/Set\s*\(\s*[O0][S5]\s*\)\s*[:;]?\s*(\d+[.,]\d{2})\s*[G%]/i);
+    const commit = gib(/Committed\s*\(\s*[O0][S5]\s*\)\s*[:;]?\s*(\d+[.,]\d{2})\s*[G%]/i);
+    if (ws != null) out.wsMB = ws;
+    if (commit != null && (ws == null || commit >= ws)) out.commitMB = commit;
+  }
+
   // "RL: entities: 34154, tick: 0.36ms, MTSync: 0.53ms" (replication layer)
   const rl = find(/RL\s*[:;]\s*entit/i);
   if (rl) {
@@ -213,16 +369,21 @@ function parseOverlay(lines, colored) {
     const p = planetCode(planet);
     if (p) out.planet = p;
   }
+  Object.assign(out, whereabouts(list));
+  if (!out.system && out.planet) out.system = /^[A-Z][a-z]+/.exec(out.planet)[0];
+  if (!out.system && /^RR_P\d_L\d$/.test(out.location || '')) out.system = 'Pyro';
 
   // Throw away numbers that can't be right.
   // Game servers run at up to 30 fps; anything far above that is a frame time read as fps.
   if (out.serverFps != null && !(out.serverFps > 0 && out.serverFps <= 60)) for (const k of FRAMES) delete out[k];
   if (out.clientFps != null && !(out.clientFps > 0 && out.clientFps <= 1000)) delete out.clientFps;
+  if (out.vramTotalMB != null && !(out.vramTotalMB >= 1024 && out.vramTotalMB <= 262144)) for (const k of ['vramMB', 'vramTotalMB']) delete out[k];
+  for (const k of ['wsMB', 'commitMB']) if (out[k] != null && !(out[k] >= 256 && out[k] <= 1048576)) delete out[k];
   if (out.pingMs != null && !(out.pingMs >= 0 && out.pingMs < 1500)) delete out.pingMs;
   if (out.lossPct != null && !(out.lossPct >= 0 && out.lossPct <= 100)) delete out.lossPct;
   if (out.playersShard != null && !(out.playersShard > 0 && out.playersShard <= 5000)) delete out.playersShard;
   if (out.playersServer != null && (!(out.playersServer > 0 && out.playersServer <= 2000) || (out.playersShard != null && out.playersServer > out.playersShard))) delete out.playersServer;
-  out.ok = ['serverFps', 'server', 'shard', 'playersServer', 'pingMs'].some((k) => out[k] != null);
+  out.ok = ['serverFps', 'server', 'shard', 'playersServer', 'pingMs', 'pos'].some((k) => out[k] != null);
   return out;
 }
 

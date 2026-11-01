@@ -1,4 +1,4 @@
-import {lines, table, fmt, esc, series, critical, muted} from '../kit.js';
+import {lines, table, fmt, esc, series, critical, muted, legend} from '../kit.js';
 import {median, ms} from '../model.js';
 import {readingHealth, healthLabel, healthClass, connectionLabel, summarizeServers, shardHealth, serverSegments, fillGaps} from '../servers-model.js';
 import {tile, card, head, draw, b} from './common.js';
@@ -100,6 +100,7 @@ export async function render(root, {state}) {
       ${card('lv-fps', 'Server fps', 'This session. The dashed line is the lowest fps in each reading.', {wide: true})}
       ${card('lv-players', 'Players', 'On your server and on the whole shard.', {})}
       ${card('lv-net', 'Ping', 'Your connection to the server.', {})}
+      ${card('lv-memory', 'Memory', 'The game in RAM and reserved, and video memory (VRAM) in use on your graphics card.', {legend: legend([[series(3), 'In RAM', true], [series(2), 'Reserved', true], [series(0), 'VRAM', true]])})}
       ${card('lv-servers', `Servers you've seen on this shard${sh ? ` · shard health ${sh.health} (${healthLabel(sh.health)})` : ''}`, sh ? `From the ${sh.servers} server${sh.servers === 1 ? '' : 's'} you've been on in the last 2 hours, weighted by players on each. Servers you haven't visited can't be seen from your PC.` : 'Servers appear here as you move between them.', {wide: true, body: '<div id="lv-servers"></div>'})}
       ${card('lv-hops', 'Where each server was used', 'Every stretch on one game server this session, with where you were.', {body: '<div id="lv-hops"></div>'})}
       <article class="card" id="card-lv-session"><h2>Session so far</h2>
@@ -141,6 +142,13 @@ export async function render(root, {state}) {
       series: [{name: 'Ping', color: series(2), get: (t) => byT.get(t).pingMs}],
       tipExtra: (t) => [[null, 'Packet loss', byT.get(t).lossPct != null ? fmt.pct(byT.get(t).lossPct) : '—']]});
   }, 'Ping shows up after two overlay readings.');
+  const gb = (v) => (v == null ? null : v / 1024);
+  draw(root, 'lv-memory', 210, (ctx) => {
+    if (cats.length < 2 || !timeline.some((r) => r.vramMB != null || r.wsMB != null)) return false;
+    lines(ctx, {cats, xLabel: clock, yFmt: (v) => `${fmt.dec(v, v > 0 && v < 10 ? 1 : 0)} GB`, yMin: 0, tipHead: clock,
+      series: [{name: 'In RAM', color: series(3), get: (t) => gb(byT.get(t).wsMB)}, {name: 'Reserved', color: series(2), get: (t) => gb(byT.get(t).commitMB)}, {name: 'VRAM', color: series(0), get: (t) => gb(byT.get(t).vramMB)}],
+      tipExtra: (t) => (byT.get(t).vramTotalMB ? [[null, 'VRAM on the card', `${fmt.dec(byT.get(t).vramTotalMB / 1024, 0)} GB`]] : [])});
+  }, 'Memory shows up after two overlay readings.');
 
   table(root.querySelector('#lv-servers'), {
     rows: servers, sortKey: 'last',

@@ -6,7 +6,7 @@ const fs = require('fs');
 const readline = require('readline');
 const crypto = require('crypto');
 
-const PARSER_VERSION = 16;
+const PARSER_VERSION = 17;
 
 const TS = /^<(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)(?:\.\d+)?Z>/;
 const ID_SUFFIX = /_\d{9,}$/;
@@ -129,7 +129,7 @@ async function parseLogFile(file) {
     clean: false, crash: null,
     joins: [], loads: [], profiles: [],
     kills: [], deaths: [], corpses: [], vdest: [], flights: [],
-    contracts: [], shop: [], locations: {}, disconnects: [], jurisdictions: {},
+    contracts: [], shop: [], locations: {}, placesAt: [], disconnects: [], jurisdictions: {},
     counts: {qtArrivals: 0, qtCalibrations: 0, medBed: 0, incapacitated: 0, crimestat: 0, crimes: 0, partyJoins: 0,
       partyCreated: 0, hangarRequests: 0, blueprints: 0, objectives: 0, animationJams: 0, errors: 0, particleLimit: 0},
     inventory: null, errorsTop: [], timeline: [],
@@ -460,6 +460,11 @@ async function parseLogFile(file) {
     if (line.includes('RequestLocationInventory')) {
       if ((m = RX.location.exec(line))) {
         rec.locations[m[1]] = (rec.locations[m[1]] || 0) + 1;
+        // When you were where (the Journey tab names its stops with these); the same place again within
+        // 5 minutes only moves the last entry's time on.
+        const prev = rec.placesAt[rec.placesAt.length - 1];
+        if (prev && prev.name === m[1] && toMs(lastTs) - toMs(prev.last) < 300000) prev.last = lastTs;
+        else if (rec.placesAt.length < 500) rec.placesAt.push({t: lastTs, last: lastTs, name: m[1]});
         rec.lastLocation = {t: lastTs, name: m[1]};
       }
       continue;

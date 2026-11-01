@@ -3,7 +3,7 @@ import {sum, median, countBy, sessionMonths, hardwareChanges, comparePatch, grou
 import {tile, card, head, draw, b} from './common.js';
 
 const PLACES = {
-  GrimHEX: 'GrimHEX', Stanton1_Lorville: 'Lorville (Hurston)', Stanton3_Area18: 'Area18 (ArcCorp)', Stanton4_NewBabbage: 'New Babbage (microTech)',
+  GrimHEX: 'Grim HEX (Yela)', Stanton1_Lorville: 'Lorville (Hurston)', Stanton3_Area18: 'Area18 (ArcCorp)', Stanton4_NewBabbage: 'New Babbage (microTech)',
   Stanton2_Orison: 'Orison (Crusader)', Nyx_Levski: 'Levski (Nyx)', AsteroidClusterBase_Nyx_Social_Keeger_001: 'Keeger social hub (Nyx)',
   RR_P2_L4: 'Checkmate (Pyro II L4)', RR_P3_L1: 'Starlight Service Station (Pyro III L1)',
   RR_P3_LEO: 'Station in Pyro III orbit', RR_P6_LEO: 'Station in Pyro VI orbit', RR_HUR_LEO: 'Station in Hurston orbit',

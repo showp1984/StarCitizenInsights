@@ -1,6 +1,6 @@
 {
   "name": "star-citizen-insights",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Local app that turns your Star Citizen Game.log files into stability, performance, combat and ship insights.",
   "license": "MIT",
   "repository": {

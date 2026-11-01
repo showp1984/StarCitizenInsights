@@ -66,12 +66,15 @@ class LiveSession {
     if (!s || s.exit === 'clean' || s.exit === 'crash') return null;
     const join = s.joins[s.joins.length - 1];
     const left = s.disconnects.length && join && s.disconnects[s.disconnects.length - 1].t > join.t;
+    const load = [...s.loads].reverse().find((l) => /^(Stanton|Pyro|Nyx|Castra)$/.test(l.dest));
     return {
       session: s.id || s.start,
       env: s.env,
       shard: join && !left ? join.shard : null,
       location: s.lastLocation ? s.lastLocation.name : null,
       locationAt: s.lastLocation ? s.lastLocation.t : null,
+      // The star system you loaded into; a jump to another one isn't logged.
+      system: load ? load.dest : null,
     };
   }
 

@@ -21,9 +21,10 @@ Needs Windows 10 or 11 with Microsoft Edge (installed by default). Without Edge 
 ## Pages
 
 - **Live**: the session you're playing, refreshed every 15 seconds: server health, server fps, players on the shard and on your game server, ping, packet loss, hitches, server restarts, the game servers on your shard with a shard health score, which server you were on where, and this session's contracts and events.
+- **Journey**: where you were during a session, on a 3D map of the star system, with the stops you made and the trips between them (quantum travel, jumps, flights) in a timeline beside it. Planets and moons open as a globe with the named places on them. A time slider shows where you were at any moment. As on the game's star map: left-drag to turn and tilt, right-drag to move, the wheel to zoom.
 - **Overview**: hours per month with hardware changes marked, a calendar of every day you played, when you play, which systems you load into, where you spend time.
 - **Stability**: crash or freeze rate by patch, graphics driver, renderer, GPU and CPU; crash types from the game's crash reports; how far into a session crashes happen; a list of every crash.
-- **Performance**: frame rate per month, by star system, hardware and patch; frame-time mix; memory use. From the frame-rate summary the game writes each time you leave a world.
+- **Performance**: frame rate per month, by star system, hardware and patch; frame-time mix; memory use. From the frame-rate summary the game writes each time you leave a world. Video memory (VRAM) isn't in the logs; it comes from the info overlay (see below).
 - **Loading & servers**: loading-screen times, server regions, relogs, disconnect reasons, server response times.
 - **Shards & servers**: every shard you've joined with time on it and crash rate, every game server you've been on with its fps and health, server fps by hour of the day and health by region.
 - **Combat**: ship combat vs on foot against NPCs vs players, PvP kills and deaths per month, top weapons for each, who you fight, where, how you died, ships you destroyed, anonymous rivals, your biggest combat sessions.
@@ -49,7 +50,18 @@ While Star Citizen runs and is the window in front, the app copies the overlay's
 - Where you were comes from the overlay's location line (a station, or open space near a Lagrange point) when it's readable, otherwise from the last place the game logged you opening an inventory, as long as you haven't changed game server since.
 - Reading pauses while the game is minimized or behind another window.
 - The app keeps running in the background while the game is open, so a session is recorded even if you close the app window.
+- Each reading also keeps the game's memory use from the overlay: in RAM, reserved, and video memory (VRAM) in use out of what your graphics card has. Game.log only has RAM peaks, so VRAM figures start with version 0.3.0 and cover sessions with the overlay on. A memory figure that changes several-fold within 2 minutes is a misread and is dropped; a session's VRAM peak only counts a value another reading within 2 minutes backs up.
 - Readings are stored in `%LOCALAPPDATA%\StarCitizenInsights\overlay\` (one file per month).
+
+## Journey
+
+The top of the overlay is a stack of "Zone … Pos" lines: your position inside your ship, relative to the planet, moon, Lagrange point or jump point you're near, and in the star system. The app keeps the last two with each reading (in km), so it needs no extra screen reading for this.
+
+- OCR garbles a digit now and then. The system position is printed twice and a reading counts when both copies agree, or when another reading within 3 minutes agrees with it, or when it lies on the straight line between two good readings (quantum travel goes in a straight line). The rest are left out.
+- A **stop** is 2 minutes or more within 5 km. Near a planet or moon this is measured in the body's own turning frame, so sitting at Grim HEX for an hour is one spot, not an arc around Yela. Stops are named from the overlay's location line, from Game.log seeing you open your inventory there, or from the nearest named place on the planet or moon (within 10 km).
+- **Trips** between stops are split into quantum travel (faster than 50 km/s), jumps between systems and flights. A loading screen in between marks a relog or respawn.
+- The map is drawn by the app from coordinates; there are no map images. Positions of planets, moons, Lagrange points and named places come from the [starnav](https://crates.io/crates/starnav) community data (MIT, see `THIRD-PARTY-NOTICES.md`), converted with `scripts/make-starmap.js`. In Stanton they match the overlay to the metre. Pyro's Lagrange points there are placed by rule and some are off (Pyro III L1 by about 280,000 km): where your readings show a position to be wrong, the app works out the right one from them, or leaves the marker off. Pyro's jump points are placed where you jumped.
+- Positions are stored from version 0.3.0 on, so earlier sessions have no journey.
 
 **Health** of a reading is 60% the server's fps and 40% the lowest fps in the overlay's measuring window, both out of 30 (what game servers run at), minus 2 points per hitch. 80+ is good, 60+ fair, 40+ poor, lower is bad. A **game server's** health is the median of its readings; the **shard's** health is the health of the game servers you've been on in the last two hours, weighted by how many players each one has. Servers you haven't visited can't be seen from your PC.
 
@@ -92,6 +104,7 @@ On your own PC you can also start from source with `Star Citizen Insights.vbs` (
 - `public/`: the app UI (vanilla JS modules plus d3).
 - `src/live.js`: follows the Game.log of the session being played.
 - `src/overlay/`: `reader.ps1` captures the overlay corner and runs Windows OCR, `parse.js` turns its text into numbers, `monitor.js` reads on a schedule and stores readings.
+- `public/js/journey-model.js` turns positions into a cleaned track, stops and trips; `public/js/pages/journey.js` draws the map. `public/data/starmap.json` is the map's data, built by `scripts/make-starmap.js` from starnav's `objContainers.json` and `pois.json`.
 - `scripts/build-exe.js`: builds the .exe. `scripts/make-icon.js` regenerates `public/app.ico`.
 - `scripts/ocr-file.js`: runs the overlay reader and parser on screenshots (`node scripts/ocr-file.js 720 320 3 0 shot.jpg`). `scripts/bench-overlay.js` times the reader.
 - `prototype/` (local only, not published): the first Python analysis scripts and an earlier one-page dashboard.

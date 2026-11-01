@@ -10,8 +10,9 @@ import * as missions from './pages/missions.js';
 import * as sessionsPage from './pages/sessions.js';
 import * as live from './pages/live.js';
 import * as servers from './pages/servers.js';
+import * as journey from './pages/journey.js';
 
-const PAGES = {live, overview, stability, performance, loading, servers, combat, ships, missions, sessions: sessionsPage};
+const PAGES = {live, journey, overview, stability, performance, loading, servers, combat, ships, missions, sessions: sessionsPage};
 const LIVE_REFRESH_MS = 15000;
 const $ = (s) => document.querySelector(s);
 
@@ -22,7 +23,7 @@ const saved = (() => {
     return {};
   }
 })();
-const state = {data: null, env: saved.env || 'LIVE', period: saved.period || 'all', page: 'overview', session: null};
+const state = {data: null, env: saved.env || 'LIVE', period: saved.period || 'all', page: 'overview', session: null, journey: null};
 
 function saveFilters() {
   try {
@@ -36,6 +37,7 @@ function readHash() {
   const [page, ...rest] = location.hash.replace(/^#/, '').split('/');
   state.page = PAGES[page] ? page : 'overview';
   state.session = state.page === 'sessions' && rest.length ? decodeURIComponent(rest.join('/')) : null;
+  state.journey = state.page === 'journey' && rest.length ? decodeURIComponent(rest.join('/')) : null;
 }
 
 function open(key) {
@@ -60,9 +62,11 @@ function render() {
   });
 }
 
-// The Live tab follows the running session.
-setInterval(() => {
-  if (state.data && state.page === 'live' && !document.hidden) {
+// The Live tab follows the running session, and so does the Journey tab while it shows it (or, with no session
+// picked, as soon as one is being played).
+setInterval(async () => {
+  if (!state.data || document.hidden) return;
+  if (state.page === 'live' || (state.page === 'journey' && (journey.following() || (await journey.liveWaiting(state))))) {
     render.keepScroll = true;
     render();
   }

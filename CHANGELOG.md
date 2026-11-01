@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.0
+
+- New **Journey** tab: where you were during a session, on a 3D map of the star system drawn from your positions on the info overlay (left-drag to turn and tilt, right-drag to move, wheel to zoom, as on the game's star map), with your stops and trips (quantum travel, jumps, flights, relogs) in a timeline. Planets and moons open as a globe with outposts, stations and other named places; a time slider shows where you were at any moment. It follows the session you're playing.
+- Overlay readings now keep your position in the star system and relative to the planet, moon, Lagrange or jump point you're near, and which system you're in.
+- Stops are named from the overlay's location line, the places Game.log saw you open your inventory, or the nearest named place. Logs are read once more on the first start to note those places with their times.
+- Map data for Stanton, Pyro and Nyx from the starnav community data (MIT).
+- Video memory (VRAM): read from the info overlay with the game's RAM use. The Live tab charts RAM, reserved memory and VRAM over the session; the Performance tab adds VRAM to the memory chart and a typical VRAM peak.
+
 ## 0.2.1
 
 - Live tab: reworded labels and the summary line, tiles regrouped (server, players, connection, your frame rate). Health scores are now labelled Good, Fair, Poor and Bad.
