@@ -61,10 +61,11 @@ export async function render(root, {state}) {
   const fpsRead = cur && [...readings].reverse().find((r) => r.serverFps != null && r.server === cur.server && ms(cur.t) - ms(r.t) <= 60000);
   const fpsAge = fpsRead && fpsRead !== cur ? ` (read ${ago(fpsRead.t, now)})` : '';
   // Leave out whatever this reading couldn't read rather than printing a dash mid-sentence.
-  const players = cur ? [cur.playersServer != null ? `${b(fmt.int(cur.playersServer))} players on it` : '', cur.playersShard != null ? `${b(fmt.int(cur.playersShard))} on the shard` : ''].filter(Boolean).join(' and ') : '';
-  const running = fpsRead ? ` is running at ${b(fmt.dec(fpsRead.serverFps))} fps${fpsRead.serverFpsMin != null ? ` (low ${b(fmt.dec(fpsRead.serverFpsMin))})` : ''}${fpsAge}` : '';
+  const players = cur ? [cur.playersServer != null ? `${b(fmt.int(cur.playersServer))} on this server` : '', cur.playersShard != null ? `${b(fmt.int(cur.playersShard))} on the shard` : ''].filter(Boolean).join(', ') : '';
+  const frames = fpsRead ? `${b(fmt.dec(fpsRead.serverFps))} fps${fpsRead.serverFpsMin != null ? `, lowest ${b(fmt.dec(fpsRead.serverFpsMin))}` : ''}${fpsAge}. ` : '';
+  const connection = cur && cur.pingMs != null ? `Connection: ${b(`${fmt.dec(cur.pingMs)} ms`)} ping${cur.lossPct != null ? `, ${b(fmt.pct(cur.lossPct))} packet loss` : ''}.` : '';
   const summary = cur
-    ? `Server ${b(cur.server || '?')}${running}${players ? `${running ? ' with' : ' has'} ${players}` : ''}. ${cur.pingMs != null ? `Ping ${b(`${fmt.dec(cur.pingMs)} ms`)}${cur.lossPct != null ? `, packet loss ${b(fmt.pct(cur.lossPct))}` : ''}.` : ''}`
+    ? `${b(cur.server || 'Unknown server')}: ${frames}${players ? `Players: ${players}. ` : ''}${connection}`
     : playing ? 'No overlay reading yet for this session.' : 'Star Citizen is not running. Start the game and this page fills in while you play.';
 
   root.innerHTML = `
@@ -78,30 +79,30 @@ export async function render(root, {state}) {
     </div>
     ${cfgHint}
     <section class="health-block ${healthClass(health)}">
-      <div class="health-score"><span class="health-num">${health ?? '—'}</span><span class="health-of">health / 100</span></div>
+      <div class="health-score"><span class="health-num">${health ?? '—'}</span><span class="health-of">of 100</span></div>
       <div class="health-text">
         <div class="health-label">${esc(healthLabel(health))}${cur ? ` · ${esc(cur.server || '')}` : ''}</div>
         <p class="lede">${summary}</p>
-        <p class="note">${shard ? `${onShardNow ? 'Shard' : 'Last shard'} <b>${esc(shard)}</b>` : 'Not on a shard'}${join ? ` (${esc(join.region)})` : ''}${session && session.lastLocation ? ` · last at ${esc(placeName(session.lastLocation.name))}` : ''}${cur && cur.planet ? ` · ${esc(placeName(cur.planet))}` : ''}. Health is 60% server fps and 40% its lowest fps, out of 30, minus 2 per hitch; median of the last 5 minutes.</p>
+        <p class="note">${shard ? `${onShardNow ? 'Shard' : 'Last shard'} <b>${esc(shard)}</b>` : 'Not on a shard'}${join ? ` (${esc(join.region)})` : ''}${session && session.lastLocation ? ` · last at ${esc(placeName(session.lastLocation.name))}` : ''}${cur && cur.planet ? ` · ${esc(placeName(cur.planet))}` : ''}. Health is 60% server fps and 40% its lowest fps, out of 30, minus 2 per hitch, taken as the middle value of your readings over the past five minutes.</p>
       </div>
     </section>
     <div class="tiles">
       ${tile('Server fps', fpsRead ? fmt.dec(fpsRead.serverFps) : '—', fpsRead && fpsRead.serverFpsMin != null ? `low ${fmt.dec(fpsRead.serverFpsMin)}${fpsRead.serverFpsMax != null ? ` · high ${fmt.dec(fpsRead.serverFpsMax)}` : ''}${fpsAge}` : 'from the overlay')}
-      ${tile('Players on shard', cur ? fmt.int(cur.playersShard) : '—', shard || '')}
-      ${tile('On your server', cur ? fmt.int(cur.playersServer) : '—', cur ? cur.server || '' : '')}
-      ${tile('Ping', cur && cur.pingMs != null ? `${fmt.dec(cur.pingMs)} ms` : '—', conn || '')}
-      ${tile('Packet loss', cur && cur.lossPct != null ? fmt.pct(cur.lossPct) : '—', '')}
       ${tile('Hitches', recent.length ? fmt.int(hitches) : '—', 'last 5 minutes')}
       ${tile('Server restarts', fmt.int(restarts), 'while you were on it')}
-      ${tile('Your fps', cur && cur.clientFps != null ? fmt.dec(cur.clientFps, 0) : '—', '')}
+      ${tile('This server', cur ? fmt.int(cur.playersServer) : '—', cur && cur.server ? `players on ${cur.server}` : 'players')}
+      ${tile('Whole shard', cur ? fmt.int(cur.playersShard) : '—', 'players')}
+      ${tile('Ping', cur && cur.pingMs != null ? `${fmt.dec(cur.pingMs)} ms` : '—', conn || '')}
+      ${tile('Packet loss', cur && cur.lossPct != null ? fmt.pct(cur.lossPct) : '—', '')}
+      ${tile('Your frame rate', cur && cur.clientFps != null ? `${fmt.dec(cur.clientFps, 0)} fps` : '—', '')}
     </div>
     <div class="grid">
       ${card('lv-fps', 'Server fps', 'This session. The dashed line is the lowest fps in each reading.', {wide: true})}
       ${card('lv-players', 'Players', 'On your server and on the whole shard.', {})}
       ${card('lv-net', 'Ping', 'Your connection to the server.', {})}
-      ${card('lv-servers', `Game servers on this shard${sh ? ` · shard health ${sh.health} (${healthLabel(sh.health)})` : ''}`, sh ? `From the ${sh.servers} server${sh.servers === 1 ? '' : 's'} you've been on in the last 2 hours, weighted by players on each. Servers you haven't visited can't be seen from your PC.` : 'Servers appear here as you move between them.', {wide: true, body: '<div id="lv-servers"></div>'})}
+      ${card('lv-servers', `Servers you've seen on this shard${sh ? ` · shard health ${sh.health} (${healthLabel(sh.health)})` : ''}`, sh ? `From the ${sh.servers} server${sh.servers === 1 ? '' : 's'} you've been on in the last 2 hours, weighted by players on each. Servers you haven't visited can't be seen from your PC.` : 'Servers appear here as you move between them.', {wide: true, body: '<div id="lv-servers"></div>'})}
       ${card('lv-hops', 'Where each server was used', 'Every stretch on one game server this session, with where you were.', {body: '<div id="lv-hops"></div>'})}
-      <article class="card" id="card-lv-session"><h2>This session</h2>
+      <article class="card" id="card-lv-session"><h2>Session so far</h2>
         <div class="kv-list">
           <div><span>Patch</span><b>${session ? esc(session.patch || '?') : '—'}</b><small>${session ? `build ${esc(session.changelist || '?')}` : ''}</small></div>
           <div><span>Started</span><b>${session ? clock(session.start) : '—'}</b><small>${session ? fmt.hm(session.minutes) : ''}</small></div>
@@ -110,8 +111,8 @@ export async function render(root, {state}) {
           <div><span>Server response</span><b>${session && session.inventory ? `${fmt.dec(session.inventory.median, 2)} s` : '—'}</b><small>inventory round trip</small></div>
           <div><span>Deaths</span><b>${session ? fmt.int(session.deathCount) : '—'}</b><small>${session ? `${fmt.int(session.counts.medBed)} med-bed heals` : ''}</small></div>
         </div>
-        <h3 class="sub">Active contracts</h3>
-        <p class="note">${active.length ? active.map((c) => esc(c.name)).join(' · ') : 'None accepted this session.'}</p>
+        <h3 class="sub">Open contracts</h3>
+        <p class="note">${active.length ? active.map((c) => esc(c.name)).join(' · ') : 'No contracts taken yet.'}</p>
         <h3 class="sub">Latest events</h3>
         <ol class="timeline">${session ? session.timeline.slice(-12).reverse().map((e) => `<li><time>${esc(clock(e.t))}</time><span class="dot ${esc(e.kind)}"></span><span>${esc(e.text)}</span></li>`).join('') : ''}</ol>
       </article>

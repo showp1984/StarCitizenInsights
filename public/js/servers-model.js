@@ -16,9 +16,9 @@ export function readingHealth(r) {
 
 export function healthLabel(h) {
   if (h == null) return 'No data';
-  if (h >= 80) return 'Healthy';
-  if (h >= 60) return 'OK';
-  if (h >= 40) return 'Struggling';
+  if (h >= 80) return 'Good';
+  if (h >= 60) return 'Fair';
+  if (h >= 40) return 'Poor';
   return 'Bad';
 }
 

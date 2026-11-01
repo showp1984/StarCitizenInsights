@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- Live tab: reworded labels and the summary line, tiles regrouped (server, players, connection, your frame rate). Health scores are now labelled Good, Fair, Poor and Bad.
+
 ## 0.2.0
 
 - New **Live** tab for the session you're playing, refreshed every 15 seconds: server health, server fps, players on the shard and on your game server, ping, packet loss, hitches and server restarts, read from the game's info overlay (`r_displayinfo 3`).

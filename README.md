@@ -25,7 +25,7 @@ Needs Windows 10 or 11 with Microsoft Edge (installed by default). Without Edge 
 - **Stability**: crash or freeze rate by patch, graphics driver, renderer, GPU and CPU; crash types from the game's crash reports; how far into a session crashes happen; a list of every crash.
 - **Performance**: frame rate per month, by star system, hardware and patch; frame-time mix; memory use. From the frame-rate summary the game writes each time you leave a world.
 - **Loading & servers**: loading-screen times, server regions, relogs, disconnect reasons, server response times.
-- **Shards & servers**: every shard you've joined with time on it and crash rate, every game server you've been on with its fps and health, server fps by time of day and health by region.
+- **Shards & servers**: every shard you've joined with time on it and crash rate, every game server you've been on with its fps and health, server fps by hour of the day and health by region.
 - **Combat**: ship combat vs on foot against NPCs vs players, PvP kills and deaths per month, top weapons for each, who you fight, where, how you died, ships you destroyed, anonymous rivals, your biggest combat sessions.
 - **Ships**: flights per ship and manufacturer, timed hours, quantum jumps, ships lost, a ship log.
 - **Missions & money**: contracts over time and by name, shop spending by month and category, biggest purchases and whether the shop confirmed them.
@@ -51,7 +51,7 @@ While Star Citizen runs and is the window in front, the app copies the overlay's
 - The app keeps running in the background while the game is open, so a session is recorded even if you close the app window.
 - Readings are stored in `%LOCALAPPDATA%\StarCitizenInsights\overlay\` (one file per month).
 
-**Health** of a reading is 60% the server's fps and 40% the lowest fps in the overlay's measuring window, both out of 30 (what game servers run at), minus 2 points per hitch. 80+ is healthy, 60+ OK, 40+ struggling, lower is bad. A **game server's** health is the median of its readings; the **shard's** health is the health of the game servers you've been on in the last two hours, weighted by how many players each one has. Servers you haven't visited can't be seen from your PC.
+**Health** of a reading is 60% the server's fps and 40% the lowest fps in the overlay's measuring window, both out of 30 (what game servers run at), minus 2 points per hitch. 80+ is good, 60+ fair, 40+ poor, lower is bad. A **game server's** health is the median of its readings; the **shard's** health is the health of the game servers you've been on in the last two hours, weighted by how many players each one has. Servers you haven't visited can't be seen from your PC.
 
 ## What the logs can and can't tell
 

@@ -53,7 +53,7 @@ export async function render(root, {sessions, state}) {
     <div class="grid">
       ${card('sv-shards', 'Shards you\'ve been on', 'Time on each shard comes from Game.log; server fps, players and health from overlay readings where you have them.', {wide: true, body: '<div id="sv-shards"></div>'})}
       ${card('sv-servers', 'Game servers you\'ve been on', 'With server meshing a shard runs on several game servers; this is every one the overlay showed you on.', {wide: true, body: '<div id="sv-servers"></div>'})}
-      ${card('sv-hours', 'Server fps by time of day', 'Median server fps of your readings in each local hour.')}
+      ${card('sv-hours', 'Server fps by hour of the day', 'Median server fps of your readings in each local hour.')}
       ${card('sv-regions', 'Server health by region', 'Median health of your readings per server region.')}
     </div>`;
 
