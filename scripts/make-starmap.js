@@ -51,6 +51,9 @@ for (const sys of SYSTEMS) {
       x: km(c.pos_x), y: km(c.pos_y), z: km(c.pos_z), r: km(c.body_radius), om: km(c.om_radius) || null,
     });
   }
+  // The source's Nyx predates the system's current layout: its one body, Delamar, sits 21,000 km from the star,
+  // while Levski and Nyx's stations are tens of millions of km out. Nyx gets its star only.
+  if (sys === 'Nyx') s.bodies = [];
   // A moon far from its planet is a data error (Fuego sits next to Pyro IV in the source); leave it off the map.
   s.bodies = s.bodies.filter((b) => {
     const p = b.parent && s.bodies.find((x) => x.code === b.parent);

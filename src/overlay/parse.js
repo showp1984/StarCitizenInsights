@@ -200,6 +200,18 @@ function jumpOf(name) {
   return m && sys(m[1]) && sys(m[2]) ? {from: sys(m[1]), to: sys(m[2])} : null;
 }
 
+// A place or zone name that says which star system it's in: Nyx_TSG_QVExtractionStation_016,
+// AsteroidClusterBase_Nyx_Social_Keeger_001, Stanton1_Lorville, PyroSolarSystem, RR_P2_L4 (Pyro's stations),
+// GrimHEX.
+function systemOfPlace(name) {
+  const s = String(name || '');
+  const m = /(?:^|[\s_¯-])(Stanton|Pyro|Nyx|Castra)(?=$|[\s_¯\d-]|SolarSystem)/i.exec(s);
+  if (m) return m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
+  if (/^RR_P\d_/i.test(s)) return 'Pyro';
+  if (/^RR_(HUR|CRU|ARC|MIC)_/i.test(s) || /Gr[il1|]?[mn]\s*HEX/i.test(s)) return 'Stanton';
+  return null;
+}
+
 const close = (a, b) => a != null && b != null && Math.abs(a - b) < 0.0005;
 
 function whereabouts(list) {
@@ -253,6 +265,10 @@ function whereabouts(list) {
   if (out.pos && Math.hypot(out.pos[0], out.pos[1]) < 100) {
     for (const k of ['pos', 'pos2', 'posCheck']) delete out[k];
   }
+  // Away from planets and Lagrange points (Nyx's asteroid bases, say) a station's or hangar's zone may still
+  // name the system.
+  if (!out.system) out.system = stack.map((z) => systemOfPlace(z.name)).find(Boolean) || undefined;
+  if (!out.system) delete out.system;
   const inner = stack[0].name;
   if (MAKERS.test(inner) && !bodyOf(inner)) {
     const ship = inner.replace(/[_¯]/g, ' ').replace(/\s*\d{6,}\S*.*$/, '').replace(/\s+/g, ' ').trim();
@@ -371,7 +387,8 @@ function parseOverlay(lines, colored) {
   }
   Object.assign(out, whereabouts(list));
   if (!out.system && out.planet) out.system = /^[A-Z][a-z]+/.exec(out.planet)[0];
-  if (!out.system && /^RR_P\d_L\d$/.test(out.location || '')) out.system = 'Pyro';
+  if (!out.system && loc) out.system = systemOfPlace(out.location) || systemOfPlace(loc.replace(/^.*?locat\S*\s*[:.]?\s*/i, '')) || undefined;
+  if (!out.system) delete out.system;
 
   // Throw away numbers that can't be right.
   // Game servers run at up to 30 fps; anything far above that is a frame time read as fps.
@@ -422,4 +439,4 @@ async function parseCapture(lines, again) {
   return out;
 }
 
-module.exports = {parseOverlay, parseCapture, fillFrom, rows, fixShard, planetCode};
+module.exports = {parseOverlay, parseCapture, fillFrom, rows, fixShard, planetCode, systemOfPlace};

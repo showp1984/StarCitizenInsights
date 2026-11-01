@@ -112,16 +112,26 @@ class OverlayMonitor {
     return out;
   }
 
-  // The overlay names the star system only near a planet, moon, Lagrange or jump point. In between it's the one
-  // you were last seen in this session (after a jump tunnel, the one it leads to), else the one Game.log loaded.
+  // The overlay names the star system only near a planet, moon, Lagrange or jump point, or at a station whose
+  // zone carries it (`systemSeen`). In between it's whichever is newer: the last system the overlay named this
+  // session (after a jump tunnel, the one it leads to), or Game.log's (see LiveSession.context).
   systemOf(r, ctx) {
-    if (r.system) return r.system;
+    if (r.system) {
+      r.systemSeen = true;
+      return r.system;
+    }
+    let seen = null;
     for (let i = this.readings.length - 1; i >= 0; i -= 1) {
       const x = this.readings[i];
       if (x.session !== r.session) break;
-      if (x.system) return x.jumpTo || x.system;
+      if (x.systemSeen) {
+        seen = {t: x.t, system: x.jumpTo || x.system};
+        break;
+      }
     }
-    return ctx.system || null;
+    const log = ctx.system ? {t: (ctx.systemAt || '').slice(0, 19), system: ctx.system} : null;
+    const best = [seen, log].filter(Boolean).sort((a, b) => (a.t < b.t ? 1 : -1))[0];
+    return best ? best.system : null;
   }
 
   save(r) {

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Fixed: a session that started in Nyx showed as Pyro (Game.log calls that loading screen Pyro's). The star system now also comes from the places where Game.log saw you open your inventory and from the station and hangar names on the overlay.
+- Nyx's map shows its star and your track only: the map data's Nyx predates the system's current layout.
+
 ## 0.3.0
 
 - New **Journey** tab: where you were during a session, on a 3D map of the star system drawn from your positions on the info overlay (left-drag to turn and tilt, right-drag to move, wheel to zoom, as on the game's star map), with your stops and trips (quantum travel, jumps, flights, relogs) in a timeline. Planets and moons open as a globe with outposts, stations and other named places; a time slider shows where you were at any moment. It follows the session you're playing.
