@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Overlay reading: when a capture is still missing something after the second look, a third keeps only pixels of exactly the overlay's colors. The overlay is drawn untinted; the ship banner, mission pop-ups, other players' name tags and a bright sky are tinted and drop out.
+- Ping and server fps are read more reliably: OCR splits them around the decimal point ("110. 9ms") or reads the 1 after it as I, and sometimes loses the middle of the line so the bandwidth figure follows "ping". A server fps is only taken from its frame time when the two agree to the rounding.
+- On 200 saved captures where a read had missed something, checked by eye: 745 of 977 server values right instead of 652, and 11 wrong instead of 46 (ping 155 right and 2 wrong, was 116 and 31).
+
 ## 0.3.2
 
 - Overlay reading: when the ship banner, player tags or pop-ups cover the overlay, the second look now keeps only the overlay's own text, picked out by its colors and its black drop shadow. On 200 captures that had missed something it read the server fps, server name, player counts, ping, position and memory more often (server name 143 instead of 107, ping 148 instead of 127), with fewer extra looks.

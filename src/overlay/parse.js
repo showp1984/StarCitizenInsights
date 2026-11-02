@@ -23,6 +23,12 @@ const digits = (s) => s
   .replace(/(?<=\d|\b)[Oo](?=[\d.,\s\]\)]|$)/g, '0')
   .replace(/(?<=\d[.,]\s?)[Oo](?=\s*m)/g, '0')
   .replace(/(?<=\d)[lI|](?=\d)/g, '1');
+// Decimals in frame times and the ping: OCR puts spaces around the point ("110. 9ms", "113 . 2ms") and reads a 1
+// right after it as I or l ("30. Ins" is 30.1ms).
+const decimals = (s) => s
+  .replace(/(\d)\s*([.,])\s*[Il|](?=\s*[mnr%])/g, '$1$21')
+  .replace(/(\d)\s*([.,])\s+(?=\d)/g, '$1$2')
+  .replace(/(\d)\s+(?=[.,]\d)/g, '$1');
 const num = (s) => (s == null ? null : Number(String(s).replace(/[Oo]/g, '0').replace(/[lI|]/g, '1')));
 const dec = (s) => (s == null ? null : Number(s.replace(/\s/g, '').replace(',', '.')));
 // The overlay prints one decimal; OCR may glue a bracket or % on as an extra digit.
@@ -31,7 +37,13 @@ const oneDecimal = (s) => {
   return m ? Number(`${m[1]}.${m[2]}`) : null;
 };
 const perSecond = (frameMs) => (frameMs > 0 ? Math.round(10000 / frameMs) / 10 : null);
-const near = (a, b) => Math.abs(a - b) <= Math.max(0.6, 0.08 * b);
+// The server's fps and frame times are exact reciprocals but for rounding to one decimal.
+const near = (a, b) => Math.abs(a - b) <= 0.15 + 0.005 * b;
+// Fields read without their decimal: kept until another look at the capture reads them fully.
+function rough(out, k) {
+  if (!out.rough) Object.defineProperty(out, 'rough', {value: new Set()});
+  out.rough.add(k);
+}
 
 const FRAMES = ['serverFps', 'serverFpsMin', 'serverFpsMax'];
 // "Server: pub-euw1b-sc-alpha-4102-12974691-game-177, restarts 0, pop. [shard 118, srv 4]", or what's left of it.
@@ -54,7 +66,7 @@ function fixShard(raw) {
 // 1000/fps (the low fps is the longest frame), so either half can stand in for the other. Only a half that backs
 // itself up counts: both halves agreeing, a value inside its own range, or, failing those, a labelled fps.
 function serverFrames(text) {
-  const s = digits(text);
+  const s = decimals(digits(text));
   const groups = [...s.matchAll(/(\d+[.,]\s?\d)\s*(m\S?|r?n\S|%)?\s*(?:[\[(]\s*(\d+[.,]\s?\d)?(?:\s*[.,]\s*[.,]?\s*(\d+[.,]\s?\d))?)?/g)]
     .map((m) => ({v: dec(m[1]), unit: !!m[2], lo: dec(m[3]), hi: dec(m[4]), at: m.index}));
   const fpsAt = s.search(/FPS/i);
@@ -103,10 +115,10 @@ function fromColored(out, list, colored) {
   }
 }
 
-// "FPS 162.2 [30..179], - 6.3ms [6.1ms]" (your own frame rate)
+// "FPS 162.2 [30..179], - 6.3ms [6.1ms]" (your own frame rate). The bracket may come back as a 1: "119.3 113..126)".
 function clientFps(text) {
   const s = digits(text);
-  let m = /FPS\s*[:;]?\s*(\d+[.,]\d)\s*[\[(]/i.exec(s);
+  let m = /FPS\s*[:;]?\s*(\d+[.,]\d)\s*(?:[\[(]|1(?=\d+\s*[.,]\s*[.,]))/i.exec(s);
   if (m) return dec(m[1]);
   m = /(\d+[.,]\s?\d)\s*m\S?\s*[\[(]/i.exec(s);
   return m ? perSecond(dec(m[1])) : null;
@@ -296,14 +308,17 @@ function parseOverlay(lines, colored) {
   if (iServer >= 0) {
     const s = digits(text[iServer]);
     let m;
-    // The number may come back with letters for digits: "game-llgv" is game-119.
-    if ((m = /game-\s*([0-9lI|Oog]{1,4})(?![a-z])/i.exec(s)) || (m = /game-\s*([0-9lI|Oog]{2,4})/i.exec(s))) {
-      const n = m[1].replace(/[lI|]/g, '1').replace(/[Oo]/g, '0').replace(/g/g, '9');
+    // The number may come back with letters for digits: "game-llgv" is game-119. "game" itself may lose or swap
+    // letters: "g e-68", "gzme-68", "garne-03". The comma and "restarts" follow it, unless OCR cut the number short.
+    const GAME = /g\s?[a-z]{0,2}\s?[mn]?e\s*-\s*/.source;
+    if ((m = new RegExp(`${GAME}([0-9lIi|Oog]{1,4})(?![a-z])(?=\\s*[,.;r(]|\\s*$)`, 'i').exec(s)) || (m = new RegExp(`${GAME}([0-9lIi|Oog]{2,4})`, 'i').exec(s))) {
+      const n = m[1].replace(/[lIi|]/g, '1').replace(/[Oo]/g, '0').replace(/g/g, '9');
       if (/^\d+$/.test(n)) out.server = `game-${n}`;
     }
     if ((m = /restarts\s*([0-9]+)/i.exec(s))) out.restarts = num(m[1]);
     if ((m = /shard\s*([0-9]+)/i.exec(s))) out.playersShard = num(m[1]);
-    else if ((m = /(\d{2,})\s*,\s*[sg]rv/i.exec(s)) && !/restarts\s*$/i.test(s.slice(0, m.index))) out.playersShard = num(m[1]);
+    // (When OCR lost the middle of the line, the number before "srv" may be the restarts or the server's.)
+    else if ((m = /(\d{2,})\s*,\s*[sg]rv/i.exec(s)) && !/(restarts|game-)\s*$/i.test(s.slice(0, m.index))) out.playersShard = num(m[1]);
     // The count is followed by "]", which OCR often turns into a trailing 1: "srv 191" is 19.
     if ((m = /[sg]rv\s*[:;]?\s*([0-9OoIl|]+)(.?)/i.exec(s))) {
       let v = String(num(m[1]));
@@ -333,9 +348,18 @@ function parseOverlay(lines, colored) {
   // "Net: ping 26.8ms, loss 0.0% BwIn 637.280kbps, BwOut 128.321kbps"
   const net = find(/Net\s*\W?\s*[:;"]|[pi]?ing\s*\d/i);
   if (net) {
-    const s = digits(net);
+    const s = decimals(digits(net));
     let m;
-    if ((m = /(?:ping|ing)\s*[:;]?\s*(\d+(?:[.,]\d)?)/i.exec(s))) out.pingMs = oneDecimal(m[1]) ?? num(m[1]);
+    // The ping has one decimal and "ms" after it (read as ns, m5, % and worse). Without its point ("112 6m5") the
+    // decimal is still there; without the decimal it's kept as a whole number until another look reads it. More
+    // digits after the decimal mean OCR lost the middle of the line and the number is the bandwidth (three
+    // decimals). With the label lost, the number before "loss" is the ping.
+    if ((m = /(?:p[il1|]n[gq]|[il1|]ng)\s*[:;.,']?\s*(\d{1,4})(?:[.,]([0-9Il|])(?!\d)|\s+(\d)(?=\s*[mn])|(?=\s*[mnr%]))/i.exec(s)) ||
+        (m = /(?<![\d.,])(\d{1,4})[.,](\d)\s*[mnr%]\S{0,2}\s*[,.]?\s*(?:loss|[l1I][o0][s5]{2})/i.exec(s))) {
+      const frac = m[2] ?? m[3];
+      out.pingMs = frac == null ? Number(m[1]) : Number(`${m[1]}.${num(frac)}`);
+      if (frac == null) rough(out, 'pingMs');
+    }
     if ((m = /loss\s*[:;]?\s*(\d+[.,]\d+)/i.exec(s))) out.lossPct = oneDecimal(m[1]);
     else if ((m = /ms,\s*\S+\s+(\d[.,]\d+)/i.exec(s))) out.lossPct = oneDecimal(m[1]);
     if ((m = /Bw\s*[Il1]n\s*[:;]?\s*(\d+[.,]\d+)/i.exec(s))) out.bwInKbps = Math.round(Number(m[1].replace(',', '.')));
@@ -396,7 +420,7 @@ function parseOverlay(lines, colored) {
   if (out.clientFps != null && !(out.clientFps > 0 && out.clientFps <= 1000)) delete out.clientFps;
   if (out.vramTotalMB != null && !(out.vramTotalMB >= 1024 && out.vramTotalMB <= 262144)) for (const k of ['vramMB', 'vramTotalMB']) delete out[k];
   for (const k of ['wsMB', 'commitMB']) if (out[k] != null && !(out[k] >= 256 && out[k] <= 1048576)) delete out[k];
-  if (out.pingMs != null && !(out.pingMs >= 0 && out.pingMs < 1500)) delete out.pingMs;
+  if (out.pingMs != null && !(out.pingMs >= 1 && out.pingMs < 1500)) delete out.pingMs;
   if (out.lossPct != null && !(out.lossPct >= 0 && out.lossPct <= 100)) delete out.lossPct;
   if (out.playersShard != null && !(out.playersShard > 0 && out.playersShard <= 5000)) delete out.playersShard;
   if (out.playersServer != null && (!(out.playersServer > 0 && out.playersServer <= 2000) || (out.playersShard != null && out.playersServer > out.playersShard))) delete out.playersServer;
@@ -413,31 +437,37 @@ const OVERLAY_MARKS = /CamDir|Zone\s*:|Session\s*:|Shard\s*[Il1|]?\s*d|ServerTim
 // fps it belongs to.
 function fillFrom(out, other) {
   for (const [k, v] of Object.entries(other)) {
-    if (k === 'ok' || v == null || out[k] != null || FRAMES.includes(k)) continue;
+    if (k === 'ok' || v == null || FRAMES.includes(k)) continue;
+    const otherRough = !!(other.rough && other.rough.has(k));
+    const better = out[k] != null && out.rough && out.rough.has(k) && !otherRough;
+    if (out[k] != null && !better) continue;
     out[k] = v;
+    if (better) out.rough.delete(k);
+    else if (otherRough) rough(out, k);
   }
   if (out.serverFps == null && other.serverFps != null) for (const k of FRAMES) if (other[k] != null) out[k] = other[k];
   out.ok = !!(out.ok || other.ok);
   return out;
 }
 
-// Reads one capture. When fields are missing, takes a second look at only the overlay's own text, picked out by
-// its colors and its black drop shadow, then a third with only colored text kept (see reader.ps1). On 200 saved
-// captures where a read had missed something, this order read more of every field than the earlier one (colored
-// text second, then all bright pixels next to a shadow), in fewer looks. `again(threshold)` OCRs the capture once
-// more and resolves to its lines, or null.
+// Reads one capture. When fields are missing, takes another look at only the overlay's own text, picked out by its
+// colors and its black drop shadow; then, while a field other than your own fps is still missing, one at its exact
+// colors only (stricter: it drops the ship banner, pop-ups and name tags the first keeps bits of, but also some
+// faint strokes, so it errs differently), then one with only colored text kept (see reader.ps1). On 200 saved
+// captures where a read had missed something, checked by eye, this read 745 of 977 server values right where the
+// order without the exact-color look read 691. `again(threshold)` OCRs the capture once more and resolves to its
+// lines, or null.
 async function parseCapture(lines, again) {
   const missing = (p) => WANTED.filter((k) => p[k] == null);
   const out = parseOverlay(lines);
   out.passes = 1;
   if (!missing(out).length || !OVERLAY_MARKS.test(rows(lines).join('\n'))) return out;
-  const keyed = await again(-3);
-  if (keyed) fillFrom(out, parseOverlay(keyed));
-  out.passes = 2;
-  if (missing(out).some((k) => k !== 'clientFps')) {
-    const colored = await again(-1);
-    if (colored) fillFrom(out, parseOverlay(lines, colored));
-    out.passes = 3;
+  for (const threshold of [-3, -2, -1]) {
+    if (threshold !== -3 && !missing(out).some((k) => k !== 'clientFps')) break;
+    const more = await again(threshold);
+    // The colored look comes back in fragments and is read beside the first one.
+    if (more) fillFrom(out, threshold === -1 ? parseOverlay(lines, more) : parseOverlay(more));
+    out.passes += 1;
   }
   return out;
 }

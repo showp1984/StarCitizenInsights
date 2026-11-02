@@ -7,10 +7,11 @@
 #   bench <width> <height> <scale> <threshold>          from the primary screen (timing without the game)
 #   again <scale> <threshold>                           the last captured corner once more, cleaned up differently
 #   save  <path>                                        the last captured corner as PNG (diagnosis mode)
-#   show  -3 <path>                                     the last captured corner as the -3 clean-up sees it (tests)
+#   show  <threshold> <path>                            the last captured corner as the -2 or -3 clean-up sees it (tests)
 #   quit
 # threshold 0 skips the clean-up; -1 keeps only yellow, orange and red text; -3 keeps only the overlay's own
-# text, by its colors and black drop shadow; otherwise pixels at least that bright become black text on white.
+# text, by its colors and black drop shadow; -2 does the same with its exact colors, stricter; otherwise pixels at
+# least that bright become black text on white.
 # The capture copies screen pixels only (like streaming software); it never touches the game process.
 
 $ErrorActionPreference = 'Stop'
@@ -104,6 +105,98 @@ public static class Prep {
     bmp.UnlockBits(data);
     return bmp;
   }
+  // The overlay's text colors as shares of the brightest channel: white, yellow, orange (measured on captures).
+  static readonly double[][] Colors = { new double[] { 1.0, 1.0, 1.0 }, new double[] { 1.0, 0.966, 0.586 }, new double[] { 1.0, 0.645, 0.0 } };
+  // Whether a pixel is one of the overlay's colors at some brightness (or red). Its glyphs are drawn untinted, so
+  // this is strict; dim soft edges get a little more room, being quantized more coarsely.
+  static bool OverlayColor(int r, int g, int b) {
+    int max = Math.Max(r, Math.Max(g, b));
+    if (max < 100) return false;
+    double white = 2 + 0.02 * max, colored = 4 + 0.06 * max;
+    for (int k = 0; k < Colors.Length; k++) {
+      double t = k == 0 ? white : colored;
+      if (Math.Abs(r - max * Colors[k][0]) <= t && Math.Abs(g - max * Colors[k][1]) <= t && Math.Abs(b - max * Colors[k][2]) <= t) return true;
+    }
+    return r == max && g <= 0.45 * max && b <= 0.45 * max;
+  }
+  // The overlay's own pixels by their exact colors: pure white, yellow, orange or red with the black shadow 1-2 px
+  // right and below. The ship banner, mission pop-ups, name tags and a bright sky are all tinted, so they drop out
+  // even where keyed keeps them. Soft edges next to such a pixel are inked by how far their color lies from the
+  // background around toward the glyph's (from the shadow, for the pixel the shadow falls on). Dark on white, at the
+  // capture's own size.
+  public static Bitmap Paletted(Bitmap src) {
+    var bmp = src.Clone(new Rectangle(0, 0, src.Width, src.Height), PixelFormat.Format32bppArgb);
+    var data = bmp.LockBits(new Rectangle(0, 0, bmp.Width, bmp.Height), ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
+    int stride = Math.Abs(data.Stride), w = bmp.Width, h = bmp.Height, n = w * h;
+    var buf = new byte[stride * h];
+    Marshal.Copy(data.Scan0, buf, 0, buf.Length);
+    var R = new int[n]; var G = new int[n]; var B = new int[n]; var M = new int[n];
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+      int i = y * stride + x * 4, j = y * w + x;
+      B[j] = buf[i]; G[j] = buf[i + 1]; R[j] = buf[i + 2];
+      M[j] = Math.Max(R[j], Math.Max(G[j], B[j]));
+    }
+    var core = new bool[n];
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+      int j = y * w + x;
+      if (!OverlayColor(R[j], G[j], B[j])) continue;
+      for (int dy = 1; dy <= 2 && !core[j]; dy++) for (int dx = 1; dx <= 2 && !core[j]; dx++)
+        if (x + dx < w && y + dy < h && M[(y + dy) * w + x + dx] <= 60) core[j] = true;
+    }
+    // The background color around a pixel, from pixels that are neither glyph nor shadow nor next to them.
+    var bg = new bool[n];
+    for (int j = 0; j < n; j++) bg[j] = true;
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+      if (!core[y * w + x]) continue;
+      for (int dy = -1; dy <= 2; dy++) for (int dx = -1; dx <= 2; dx++)
+        if (x + dx >= 0 && y + dy >= 0 && x + dx < w && y + dy < h) bg[(y + dy) * w + x + dx] = false;
+    }
+    int W1 = w + 1;
+    var sr = new long[W1 * (h + 1)]; var sg = new long[W1 * (h + 1)]; var sb = new long[W1 * (h + 1)]; var s0 = new int[W1 * (h + 1)];
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+      int j = y * w + x, a = (y + 1) * W1 + x + 1;
+      sr[a] = (bg[j] ? R[j] : 0) + sr[a - 1] + sr[a - W1] - sr[a - W1 - 1];
+      sg[a] = (bg[j] ? G[j] : 0) + sg[a - 1] + sg[a - W1] - sg[a - W1 - 1];
+      sb[a] = (bg[j] ? B[j] : 0) + sb[a - 1] + sb[a - W1] - sb[a - W1 - 1];
+      s0[a] = (bg[j] ? 1 : 0) + s0[a - 1] + s0[a - W1] - s0[a - W1 - 1];
+    }
+    const double Full = 245, Gain = 1.7;
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+      int j = y * w + x;
+      double ink = 0;
+      if (core[j]) ink = M[j] / Full;
+      else {
+        int best = -1;
+        for (int dy = -1; dy <= 1; dy++) for (int dx = -1; dx <= 1; dx++) {
+          int xx = x + dx, yy = y + dy;
+          if (xx >= 0 && yy >= 0 && xx < w && yy < h && core[yy * w + xx] && (best < 0 || M[yy * w + xx] > M[best])) best = yy * w + xx;
+        }
+        if (best >= 0) {
+          int x0 = Math.Max(0, x - 4), y0 = Math.Max(0, y - 4), x1 = Math.Min(w, x + 5), y1 = Math.Min(h, y + 5);
+          int cnt = s0[y1 * W1 + x1] - s0[y0 * W1 + x1] - s0[y1 * W1 + x0] + s0[y0 * W1 + x0];
+          double br = 0, bgg = 0, bb = 0;
+          if (cnt > 0) {
+            br = (sr[y1 * W1 + x1] - sr[y0 * W1 + x1] - sr[y1 * W1 + x0] + sr[y0 * W1 + x0]) / (double)cnt;
+            bgg = (sg[y1 * W1 + x1] - sg[y0 * W1 + x1] - sg[y1 * W1 + x0] + sg[y0 * W1 + x0]) / (double)cnt;
+            bb = (sb[y1 * W1 + x1] - sb[y0 * W1 + x1] - sb[y1 * W1 + x0] + sb[y0 * W1 + x0]) / (double)cnt;
+          }
+          // Right below and right of a glyph pixel the background lies in its shadow.
+          if (x >= 1 && y >= 1 && core[(y - 1) * w + x - 1]) { br *= 0.2; bgg *= 0.2; bb *= 0.2; }
+          double cr = R[best] - br, cg = G[best] - bgg, cb = B[best] - bb, len2 = cr * cr + cg * cg + cb * cb;
+          if (len2 >= 900) {
+            double alpha = ((R[j] - br) * cr + (G[j] - bgg) * cg + (B[j] - bb) * cb) / len2;
+            ink = Math.Max(0, Math.Min(1, alpha)) * Math.Min(1.0, M[best] / Full);
+          }
+        }
+      }
+      int i = y * stride + x * 4;
+      byte v = (byte)Math.Max(0, Math.Min(255, (int)(255 * (1 - Math.Min(1.0, Gain * ink)))));
+      buf[i] = v; buf[i + 1] = v; buf[i + 2] = v; buf[i + 3] = 255;
+    }
+    Marshal.Copy(buf, 0, data.Scan0, buf.Length);
+    bmp.UnlockBits(data);
+    return bmp;
+  }
   // Keeps only yellow, orange and red text (lots of red, little blue), dark on white; white text, the grey
   // ship banner and space all turn white. The overlay colors a line this way when its numbers are bad.
   public static void Colored(Bitmap bmp) {
@@ -146,13 +239,13 @@ function Find-Game {
 
 function Ocr-Bitmap([System.Drawing.Bitmap]$bmp, [double]$scale, [int]$threshold) {
   $sw = [int]($bmp.Width * $scale); $sh = [int]($bmp.Height * $scale)
-  $from = if ($threshold -eq -3) { [Prep]::Keyed($bmp) } else { $bmp }
+  $from = if ($threshold -eq -3) { [Prep]::Keyed($bmp) } elseif ($threshold -eq -2) { [Prep]::Paletted($bmp) } else { $bmp }
   $big = New-Object System.Drawing.Bitmap $sw, $sh, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
   $g = [System.Drawing.Graphics]::FromImage($big)
   $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
   $g.DrawImage($from, 0, 0, $sw, $sh)
   $g.Dispose()
-  if ($threshold -eq -3) { $from.Dispose() }
+  if ($threshold -eq -3 -or $threshold -eq -2) { $from.Dispose() }
   if ($threshold -gt 0) { [Prep]::Binarize($big, $threshold) }
   elseif ($threshold -eq -1) { [Prep]::Colored($big) }
   $ms = New-Object System.IO.MemoryStream
@@ -190,10 +283,10 @@ $proc = [System.Diagnostics.Process]::GetCurrentProcess()
 while ($null -ne ($line = [Console]::In.ReadLine())) {
   $parts = $line.Trim() -split '\s+', 6
   if ($parts[0] -eq 'quit') { break }
-  # show -3 <path>: writes the last captured corner as the -3 clean-up sees it (for tests).
+  # show <threshold> <path>: writes the last captured corner as the -2 or -3 clean-up sees it (for tests).
   if ($parts[0] -eq 'show') {
     if (-not $script:lastCrop) { [Console]::Out.WriteLine('{"saved":false}'); continue }
-    $img = [Prep]::Keyed($script:lastCrop)
+    $img = if ($parts[1] -eq '-2') { [Prep]::Paletted($script:lastCrop) } else { [Prep]::Keyed($script:lastCrop) }
     $img.Save(($line.Trim() -replace '^show\s+\S+\s+', ''), [System.Drawing.Imaging.ImageFormat]::Png); $img.Dispose()
     [Console]::Out.WriteLine('{"saved":true}')
     continue
