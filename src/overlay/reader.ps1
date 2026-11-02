@@ -7,9 +7,10 @@
 #   bench <width> <height> <scale> <threshold>          from the primary screen (timing without the game)
 #   again <scale> <threshold>                           the last captured corner once more, cleaned up differently
 #   save  <path>                                        the last captured corner as PNG (diagnosis mode)
+#   show  -3 <path>                                     the last captured corner as the -3 clean-up sees it (tests)
 #   quit
-# threshold 0 skips the clean-up; -1 keeps only yellow, orange and red text; otherwise pixels at least that
-# bright become black text on white.
+# threshold 0 skips the clean-up; -1 keeps only yellow, orange and red text; -3 keeps only the overlay's own
+# text, by its colors and black drop shadow; otherwise pixels at least that bright become black text on white.
 # The capture copies screen pixels only (like streaming software); it never touches the game process.
 
 $ErrorActionPreference = 'Stop'
@@ -54,10 +55,11 @@ public static class Prep {
     Marshal.Copy(buf, 0, data.Scan0, bytes);
     bmp.UnlockBits(data);
   }
-  // The overlay's text has a pure black drop shadow; HUD elements behind it (the ship's name banner, player
-  // tags) don't. Keeps bright pixels with a black pixel within two pixels and paints everything else black, so
-  // the text looks as it does over empty space. Works on the capture at its own size, where the shadow is.
-  public static Bitmap Outlined(Bitmap src) {
+  // The overlay's own text, by its colors: white or grey, or yellow, orange and red (bad numbers), each with its
+  // black drop shadow one or two pixels to the right and below. Those pixels become dark on white (brighter ink
+  // darker, so the font's soft edges and decimal points survive), everything else white: the ship banner's
+  // lavender text, the HUD and space behind. Works on the capture at its own size, where the shadow is.
+  public static Bitmap Keyed(Bitmap src) {
     var bmp = src.Clone(new Rectangle(0, 0, src.Width, src.Height), PixelFormat.Format32bppArgb);
     var rect = new Rectangle(0, 0, bmp.Width, bmp.Height);
     var data = bmp.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
@@ -65,22 +67,42 @@ public static class Prep {
     var buf = new byte[stride * h];
     Marshal.Copy(data.Scan0, buf, 0, buf.Length);
     var dark = new bool[w * h];
+    var ink = new int[w * h];
+    var faint = new bool[w * h];
     for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
       int i = y * stride + x * 4;
-      int max = Math.Max(buf[i], Math.Max(buf[i + 1], buf[i + 2]));
-      dark[y * w + x] = max <= 40;
+      int b = buf[i], g = buf[i + 1], r = buf[i + 2];
+      int max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b));
+      dark[y * w + x] = max <= 60;
+      bool grey = min >= 100 && max - min <= 40;
+      bool warm = r >= 130 && r - b >= 50 && r >= g - 10;
+      ink[y * w + x] = (r * 299 + g * 587 + b * 114) / 1000;
+      // The font's soft edges: dimmer, but still grey or warm.
+      faint[y * w + x] = (min >= 60 && max - min <= 45) || (r >= 100 && r - b >= 35 && r >= g - 10);
+      if (!(grey || warm)) ink[y * w + x] = -ink[y * w + x] - 1;
     }
-    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++)
-      if (!Near(dark, w, h, x, y, 2)) { int i = y * stride + x * 4; buf[i] = 0; buf[i + 1] = 0; buf[i + 2] = 0; buf[i + 3] = 255; }
+    var keep = new bool[w * h];
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+      if (ink[y * w + x] < 0) continue;
+      for (int dy = 0; dy <= 2 && !keep[y * w + x]; dy++)
+        for (int dx = 0; dx <= 2 && !keep[y * w + x]; dx++)
+          if ((dx > 0 || dy > 0) && x + dx < w && y + dy < h && dark[(y + dy) * w + x + dx]) keep[y * w + x] = true;
+    }
+    for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+      bool on = keep[y * w + x];
+      // A soft edge pixel next to kept text belongs to the same letter.
+      if (!on && faint[y * w + x])
+        for (int dy = -1; dy <= 1 && !on; dy++)
+          for (int dx = -1; dx <= 1 && !on; dx++)
+            if (x + dx >= 0 && y + dy >= 0 && x + dx < w && y + dy < h && keep[(y + dy) * w + x + dx]) on = true;
+      int lum = ink[y * w + x] < 0 ? -ink[y * w + x] - 1 : ink[y * w + x];
+      int i = y * stride + x * 4;
+      byte v = on ? (byte)Math.Max(0, Math.Min(255, 255 - (lum - 50) * 255 / 120)) : (byte)255;
+      buf[i] = v; buf[i + 1] = v; buf[i + 2] = v; buf[i + 3] = 255;
+    }
     Marshal.Copy(buf, 0, data.Scan0, buf.Length);
     bmp.UnlockBits(data);
     return bmp;
-  }
-  static bool Near(bool[] set, int w, int h, int x, int y, int r) {
-    for (int yy = Math.Max(0, y - r); yy <= Math.Min(h - 1, y + r); yy++)
-      for (int xx = Math.Max(0, x - r); xx <= Math.Min(w - 1, x + r); xx++)
-        if (set[yy * w + xx]) return true;
-    return false;
   }
   // Keeps only yellow, orange and red text (lots of red, little blue), dark on white; white text, the grey
   // ship banner and space all turn white. The overlay colors a line this way when its numbers are bad.
@@ -124,13 +146,13 @@ function Find-Game {
 
 function Ocr-Bitmap([System.Drawing.Bitmap]$bmp, [double]$scale, [int]$threshold) {
   $sw = [int]($bmp.Width * $scale); $sh = [int]($bmp.Height * $scale)
-  $from = if ($threshold -eq -2) { [Prep]::Outlined($bmp) } else { $bmp }
+  $from = if ($threshold -eq -3) { [Prep]::Keyed($bmp) } else { $bmp }
   $big = New-Object System.Drawing.Bitmap $sw, $sh, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
   $g = [System.Drawing.Graphics]::FromImage($big)
   $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
   $g.DrawImage($from, 0, 0, $sw, $sh)
   $g.Dispose()
-  if ($threshold -eq -2) { $from.Dispose() }
+  if ($threshold -eq -3) { $from.Dispose() }
   if ($threshold -gt 0) { [Prep]::Binarize($big, $threshold) }
   elseif ($threshold -eq -1) { [Prep]::Colored($big) }
   $ms = New-Object System.IO.MemoryStream
@@ -168,6 +190,14 @@ $proc = [System.Diagnostics.Process]::GetCurrentProcess()
 while ($null -ne ($line = [Console]::In.ReadLine())) {
   $parts = $line.Trim() -split '\s+', 6
   if ($parts[0] -eq 'quit') { break }
+  # show -3 <path>: writes the last captured corner as the -3 clean-up sees it (for tests).
+  if ($parts[0] -eq 'show') {
+    if (-not $script:lastCrop) { [Console]::Out.WriteLine('{"saved":false}'); continue }
+    $img = [Prep]::Keyed($script:lastCrop)
+    $img.Save(($line.Trim() -replace '^show\s+\S+\s+', ''), [System.Drawing.Imaging.ImageFormat]::Png); $img.Dispose()
+    [Console]::Out.WriteLine('{"saved":true}')
+    continue
+  }
   # save <path>: writes the last captured corner as PNG (diagnosis mode only).
   if ($parts[0] -eq 'save') {
     if ($script:lastCrop) { $script:lastCrop.Save(($line.Trim() -replace '^save\s+', ''), [System.Drawing.Imaging.ImageFormat]::Png); [Console]::Out.WriteLine('{"saved":true}') }

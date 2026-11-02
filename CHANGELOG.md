@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+- Overlay reading: when the ship banner, player tags or pop-ups cover the overlay, the second look now keeps only the overlay's own text, picked out by its colors and its black drop shadow. On 200 captures that had missed something it read the server fps, server name, player counts, ping, position and memory more often (server name 143 instead of 107, ping 148 instead of 127), with fewer extra looks.
+
 ## 0.3.1
 
 - Fixed: a session that started in Nyx showed as Pyro (Game.log calls that loading screen Pyro's). The star system now also comes from the places where Game.log saw you open your inventory and from the station and hangar names on the overlay.
